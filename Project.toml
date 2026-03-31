@@ -1,0 +1,9 @@
+[deps]
+BioSequences = "7e6ae17a-c86d-528c-b3b9-7f778a29fe59"
+BioSymbols = "3c28c6f8-a34d-59c4-9654-267d177fcfa9"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+EzXML = "8f5d6c58-4d21-5cfd-889c-e3ad7ee6a615"
+GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Kmers = "445028e4-d31f-4f27-89ad-17affd83fc22"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"

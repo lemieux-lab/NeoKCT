@@ -6,9 +6,9 @@ using Base.Threads
 using EzXML
 using GZip
 
-include("JaggedRLEArrays.jl")
-include("RLEKct.jl")
-include("thread_utils.jl")
+# include("JaggedRLEArrays.jl")
+# include("RLEKct.jl")
+# include("thread_utils.jl")
 
 struct Node{Sb<:BioSymbol}
     value::Sb
@@ -280,7 +280,7 @@ function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000
                     Threads.atomic_add!(inflight, 1)
                     put!(merge_queue, merge(+, left, right))
                     Threads.atomic_sub!(inflight, 1)
-                    verbose && tprintln("Completed merging in $(now()-start)")
+                    # verbose && tprintln("Completed merging in $(now()-start)")
                     put!(signal, nothing)
                 end
                 push!(merge_tasks, task)
@@ -332,7 +332,7 @@ function process_thread(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict
     catch e
         @error "counting thread task crashed during merge queue put" exception=(e, catch_backtrace())
     end
-    verbose && tprintln("Completed counting in $(now()-start)")
+    # verbose && tprintln("Completed counting in $(now()-start)")
 end
 
 ### EXPERIMENTAL
@@ -359,49 +359,51 @@ function jello_trie(fastq::String, Sb::Type{<:BioSymbol}=DNA; K::Int)
     return trie
 end
 
-function jello_kct_chunk(fastq::String; K::Int, chunking::Int=1_000_000, queue_size::Int=32)
-    lines = readlines(open(fastq, "r"))[2:4:end]
-    chunks = [lines[i:min(i+chunking-1, end)] for i in 1:chunking:length(lines)]
-    merge_queue = Channel{Kct{1, K}}(queue_size)
-    mother_kct = Kct(1, K)
-    # Merger thread. Works asynchronously from workers.
-    merger = @async try
-        for child_kct in merge_queue
-            mother_kct = merge(mother_kct, child_kct)
-        end
-    catch e
-        @error "Merger task crashed" exception=(e, catch_backtrace())
-    end
+### DEPRECATED
 
-    progress = Progress(length(chunks), desc = "Processing $chunking k-mers chunks...")
-    # Worker threads, building child Kcts asynchronously
-    @threads for chunk in chunks
-        child_kct = Kct(1, K)
-        for l in chunk
-            # println(l)
-            seq = bioseq(l)
-            DNA_N in seq && continue
-            k_mers = k_merize(seq, K=K)
-            for k_mer in k_mers
-                buf = JaggedRLEArray(UInt32)
-                push!(buf, UInt32[1])
-                id = push!(child_kct, buf)
-                # println(k_mer)
-                push!(child_kct.table, KRecord(k_mer, id))
-            end
-        end
-        # println("starting a sort")
-        sort!(child_kct)
-        # println(merge_queue.n_avail_items)
-        put!(merge_queue, child_kct)
-        # println("finished one chunk")
-        next!(progress; showvalues=[
-                ("items in merge queue", merge_queue.n_avail_items)
-                ])
-    end
+# function jello_kct_chunk(fastq::String; K::Int, chunking::Int=1_000_000, queue_size::Int=32)
+#     lines = readlines(open(fastq, "r"))[2:4:end]
+#     chunks = [lines[i:min(i+chunking-1, end)] for i in 1:chunking:length(lines)]
+#     merge_queue = Channel{Kct{1, K}}(queue_size)
+#     mother_kct = Kct(1, K)
+#     # Merger thread. Works asynchronously from workers.
+#     merger = @async try
+#         for child_kct in merge_queue
+#             mother_kct = merge(mother_kct, child_kct)
+#         end
+#     catch e
+#         @error "Merger task crashed" exception=(e, catch_backtrace())
+#     end
 
-    close(merge_queue)
-    wait(merger)
+#     progress = Progress(length(chunks), desc = "Processing $chunking k-mers chunks...")
+#     # Worker threads, building child Kcts asynchronously
+#     @threads for chunk in chunks
+#         child_kct = Kct(1, K)
+#         for l in chunk
+#             # println(l)
+#             seq = bioseq(l)
+#             DNA_N in seq && continue
+#             k_mers = k_merize(seq, K=K)
+#             for k_mer in k_mers
+#                 buf = JaggedRLEArray(UInt32)
+#                 push!(buf, UInt32[1])
+#                 id = push!(child_kct, buf)
+#                 # println(k_mer)
+#                 push!(child_kct.table, KRecord(k_mer, id))
+#             end
+#         end
+#         # println("starting a sort")
+#         sort!(child_kct)
+#         # println(merge_queue.n_avail_items)
+#         put!(merge_queue, child_kct)
+#         # println("finished one chunk")
+#         next!(progress; showvalues=[
+#                 ("items in merge queue", merge_queue.n_avail_items)
+#                 ])
+#     end
 
-    return mother_kct
-end
+#     close(merge_queue)
+#     wait(merger)
+
+#     return mother_kct
+# end

@@ -1,3 +1,6 @@
+using Pkg
+Pkg.activate(".")
+
 using Kmers
 using BioSequences
 using JSON
