@@ -1,4 +1,5 @@
 using Kmers, Kmers.BioSequences
+import BioSequences.bits_per_symbol
 
 struct AAAlphabet <: Alphabet end
 

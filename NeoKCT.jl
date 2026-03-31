@@ -119,7 +119,7 @@ function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alpha
 end
 
 # Initializing a NeoKCT with the hashtable of the first sample
-function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}; collapse::Bool=true) where {K, Ab<:Alphabet, W<:Unsigned}
+function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     kct = NeoKCT{K, Ab, W}()
     @showprogress desc="parsing hash table into KCT..." for (k_bits, count) in sample_hashtable
         word_id = push!(kct.counts, UInt64(count))
@@ -128,7 +128,7 @@ function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}; collapse::Bool
     end
     sort!(kct)
     compute_index!(kct)
-    kct = collapse ? collapse!(kct) : kct
+    # kct = collapse ? collapse!(kct) : kct
     return kct
 end
 
@@ -205,7 +205,7 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
     compute_index!(kct)
     
     kct.samples.x += 1
-    return kct
+    # return kct
 end
 
 function assemble_count_vector(kct::NeoKCT{K, Ab, W}, chunk_ids::NTuple) where {K, Ab<:Alphabet, W<:Unsigned}
@@ -223,8 +223,8 @@ samples = readlines(open("/u/jacquinn/phd_stuff/data/tcga_fastqs.paths", "r"))
 
 
 function build_kct(sample::String, K::Int=30, chunks::Int = 500_000; word_size::DataType=UInt64, collapse::Bool=true)
-    kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(sample, K, chunks), collapse=collapse)
-    # kct = collapse ? collapse!(kct) : kct
+    kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(sample, K, chunks))
+    kct = collapse ? collapse!(kct) : kct
     return kct
 end
 
@@ -284,21 +284,21 @@ function load(path::String)
     words_length = read(io, Int64)
     bitmap_length = read(io, Int64)
     table = Vector{K_Element{K, Ab}}(undef, table_length)
-    for i in 1:table_length
+    @showprogress for i in 1:table_length
         K = read(io, Int64)
         Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
-        C = read(io, Int64)
-        data = Tuple(read(io, UInt64) for _ in 1:C)
-        C = read(io, Int64)
-        chunk_ids = Tuple(read(io, UInt32) for _ in 1:C)
-        table[i] = K_Element{K, Ab, C}(Kmer{Ab, K, C}(Kmers.unsafe, data), chunk_ids)
+        kmer_C = read(io, Int64)
+        data = Tuple(read(io, UInt64) for _ in 1:kmer_C)
+        word_C = read(io, Int64)
+        chunk_ids = Tuple(read(io, UInt32) for _ in 1:word_C)
+        table[i] = K_Element{K, Ab, kmer_C}(Kmer{Ab, K, kmer_C}(Kmers.unsafe, data), chunk_ids)
     end
     words = Vector{UInt64}(undef, words_length)
-    for i in 1:words_length
+    @showprogress for i in 1:words_length
         words[i] = read(io, UInt64)
     end
     bitmap = BitVector(falses(bitmap_length))
-    for i in 1:bitmap_length
+    @showprogress for i in 1:bitmap_length  ## DIVIDE BY WORD SIZE, READ BY WORD SIZE
         bitmap[i] = read(io, Bool)
     end
     samples = Ref(read(io, Int64))
