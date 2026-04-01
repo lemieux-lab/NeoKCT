@@ -6,7 +6,7 @@ function load_kct(path::String)
     end
 end
 
-function write_kct(kct::NeoKCT{K, Ab}, path::String)
+function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
     open(path, "w") do io
         write(io, kct, version = Val(kct.version))
     end
@@ -68,7 +68,7 @@ function load(io::IO; version::Val{1.1})
     return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, Ref(samples_count), version)
 end
 ## V1.0 ##
-function Base.write(io::IO, tuple::Tuple; version::Val{1.0})
+function Base.write(io::IO, tuple::Tuple; version::Union{Val{1.0}})
     write(io, length(tuple))
     write.(io, tuple)
 end
@@ -77,8 +77,8 @@ function Base.write(io::IO, k_elem::K_Element{K, Ab, C}; version::Val{1.0}) wher
     write(io, K)
     write(io, codeunits(String(Ab.name.singletonname)))
     write(io, C)
-    write.(io, k_elem.seq.data, version=version)
-    write(io, k_elem.chunk_ids)
+    write.(io, k_elem.seq.data)
+    write(io, k_elem.chunk_ids, version=version)
 end
 
 function Base.write(io::IO, kct::NeoKCT{K, Ab}; version::Val{1.0}) where {K, Ab<:Alphabet}
@@ -119,6 +119,6 @@ function load(io::IO; version::Val{1.0})
         bitmap.chunks[i] = read(io, UInt64)
     end
     samples = Ref(read(io, Int64))
-    idx = fill(0:-1, 4^15)
+    idx = fill(0:-1, 4)
     return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, samples, 1.0)
 end

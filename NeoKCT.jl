@@ -16,7 +16,6 @@ include("PackedArray.jl")
 include("AAAlphabet.jl")
 include("BidirArray.jl")
 include("JelloFish.jl")
-include("KCTLoader.jl")
 
 global const VERSION = 1.0
 
@@ -438,3 +437,5 @@ function dedup_from_perm(vals::AbstractVector, perm::AbstractVector{<:Integer})
 
     return unique_vals, unique_perm, invmap
 end
+
+include("KCTLoader.jl")
