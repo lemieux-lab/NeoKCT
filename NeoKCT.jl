@@ -193,9 +193,24 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
             ke = K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id)))
             push!(kct.table, ke)
         else
-            word_id = push!(kct.counts, UInt64(count), kct.table[k_pos].chunk_ids[end])
+            # Count how many values are already stored for this k-mer across all its chunk words.
+            # If a k-mer was absent from intermediate samples, those zeros were never pushed,
+            # so we must pad them now before appending the current sample's count.
+            total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(cid), W)]) for cid in kct.table[k_pos].chunk_ids)
+            missing_counts = kct.samples.x - total_stored
+            last_wid = Int(kct.table[k_pos].chunk_ids[end])
+ 
+            for _ in 1:missing_counts
+                new_wid = push!(kct.counts, UInt64(0), last_wid)
+                if last_wid != new_wid
+                    kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(new_wid)))
+                    last_wid = new_wid
+                end
+            end
+ 
+            word_id = push!(kct.counts, UInt64(count), last_wid)
 
-            if kct.table[k_pos].chunk_ids[end] != UInt32(word_id)
+            if last_wid != word_id
                 kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
             end
         end
