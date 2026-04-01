@@ -224,7 +224,9 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
 end
 
 function assemble_count_vector(kct::NeoKCT{K, Ab, W}, chunk_ids::NTuple) where {K, Ab<:Alphabet, W<:Unsigned}
-    return reduce(vcat, [assemble_word(kct.counts, i) for i in chunk_ids])
+    counts = reduce(vcat, [assemble_word(kct.counts, i) for i in chunk_ids])
+    n_missing = kct.samples.x - length(counts)
+    return n_missing > 0 ? vcat(counts, zeros(W, n_missing)) : counts
 end
 
 function Base.getindex(kct::NeoKCT{K, Ab, W}, i::Integer)  where {K, Ab<:Alphabet, W<:Unsigned}
