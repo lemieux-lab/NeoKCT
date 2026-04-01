@@ -89,6 +89,12 @@ function get_val(arr::PackedArray{T, W}, word_id::Integer, elem_id::Integer) whe
     return word << start >> (start + (bitsizeof(W)-finish))
 end
 
+function new_word!(arr::PackedArray{T, W}) where {T, W<:Unsigned}
+    push!(arr.words, W(0))
+    append!(arr.bitmap, falses(bitsizeof(W)))
+    return length(arr.words)
+end
+
 function assemble_word(arr::PackedArray{T, W}, word_id::Integer) where {T, W<:Unsigned}
     bitmap_word = arr.bitmap[word_bitmap_slice(word_id, W)]
     elem_id = 1

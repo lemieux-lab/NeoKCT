@@ -167,21 +167,50 @@ end
 #     return kct
 # end
 
-function _push_new_kmer_counts!(counts::PackedArray{UInt32,W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
-    # Start a new packed word by pushing one zero
-    wid = push!(counts, UInt64(0))
-
-    # Pad zeros for the previous samples
-    @inbounds for _ in 2:prev_samples
-        wid = push!(counts, UInt64(0), wid)
+function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
+    wid = new_word!(counts)  # allocate word, store nothing
+    @inbounds for _ in 1:prev_samples
+        wid = push!(counts, W(0), wid)
     end
-
-    # Push the count for this new sample
-    wid = push!(counts, UInt64(count), wid)
+    wid = push!(counts, W(count), wid)
     return wid
 end
 
+# Unecessary as trailing is assumed and accounted for in the push logic
+function _pad_trailing_zeros!(kct::NeoKCT{K, Ab, W}, target_count::Int) where {K, Ab<:Alphabet, W<:Unsigned}
+    @inbounds for i in eachindex(kct.table)
+        ke = kct.table[i]
+        total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(cid), W)]) for cid in ke.chunk_ids)
+        last_wid = Int(ke.chunk_ids[end])
+        for _ in 1:(target_count - total_stored)
+            new_wid = push!(kct.counts, UInt64(0), last_wid)
+            if new_wid != last_wid
+                kct.table[i] = K_Element{K, Ab}(kct.table[i].seq, push(kct.table[i].chunk_ids, UInt32(new_wid)))
+                last_wid = new_wid
+            end
+        end
+    end
+end
+
+function find_shared_words(kct::NeoKCT)
+    seen_wids = Set{UInt32}()
+    shared_words = Set{UInt32}()
+    @showprogress "Finding Shared Words..." for ke in kct.table
+        for cid in ke.chunk_ids
+            if cid in seen_wids
+                push!(shared_words, cid)
+            else
+                push!(seen_wids, cid)
+            end
+        end
+    end
+    return shared_words
+end
+
+
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
+    shared_words = find_shared_words(kct)
+
     @showprogress desc="Adding Sample $(kct.samples.x+1) to Table..." for (k_bits, count) in sample_hashtable
         tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
         k_pos = findfirst(kct, tmp_seq)
@@ -189,7 +218,6 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
         word_id = 0::Int
         if k_pos == 0
             word_id = _push_new_kmer_counts!(kct.counts, kct.samples.x, count)
-
             ke = K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id)))
             push!(kct.table, ke)
         else
@@ -199,26 +227,41 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
             total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(cid), W)]) for cid in kct.table[k_pos].chunk_ids)
             missing_counts = kct.samples.x - total_stored
             last_wid = Int(kct.table[k_pos].chunk_ids[end])
- 
-            for _ in 1:missing_counts
-                new_wid = push!(kct.counts, UInt64(0), last_wid)
-                if last_wid != new_wid
-                    kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(new_wid)))
-                    last_wid = new_wid
-                end
-            end
- 
-            word_id = push!(kct.counts, UInt64(count), last_wid)
 
-            if last_wid != word_id
+            if last_wid in shared_words
+                # The last word is shared with another k-mer, never modify it in-place.
+                # Allocate fresh word(s) for the missing zeros and the new count.
+                if missing_counts > 0
+                    new_wid = push!(kct.counts, UInt64(0))          # new word, first zero
+                    for _ in 2:missing_counts
+                        new_wid = push!(kct.counts, UInt64(0), new_wid)
+                    end
+                    word_id = push!(kct.counts, UInt64(count), new_wid)
+                else
+                    word_id = push!(kct.counts, UInt64(count))      # new word, just the count
+                end
                 kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
+            else
+                # Word is exclusively owned by this k-mer; safe to pack into it.
+                for _ in 1:missing_counts
+                    new_wid = push!(kct.counts, UInt64(0), last_wid)
+                    if last_wid != new_wid
+                        kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(new_wid)))
+                        last_wid = new_wid
+                    end
+                end
+
+                word_id = push!(kct.counts, UInt64(count), last_wid)
+                if last_wid != word_id
+                    kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
+                end
             end
         end
     end
 
     sort!(kct)
     compute_index!(kct)
-    
+    # _pad_trailing_zeros!(kct, kct.samples.x + 1)  # pad to new sample count
     kct.samples.x += 1
     # return kct
 end
