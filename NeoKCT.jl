@@ -172,7 +172,7 @@ function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::In
     @inbounds for _ in 1:prev_samples
         wid = push!(counts, W(0), wid)
     end
-    wid = push!(counts, W(count), wid)
+    wid = push!(counts, W(count & typemax(W)), wid)
     return wid
 end
 
@@ -232,26 +232,26 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
                 # The last word is shared with another k-mer, never modify it in-place.
                 # Allocate fresh word(s) for the missing zeros and the new count.
                 if missing_counts > 0
-                    new_wid = push!(kct.counts, UInt64(0))          # new word, first zero
+                    new_wid = push!(kct.counts, W(0))          # new word, first zero
                     for _ in 2:missing_counts
-                        new_wid = push!(kct.counts, UInt64(0), new_wid)
+                        new_wid = push!(kct.counts, W(0), new_wid)
                     end
-                    word_id = push!(kct.counts, UInt64(count), new_wid)
+                    word_id = push!(kct.counts, W(count & typemax(W)), new_wid)
                 else
-                    word_id = push!(kct.counts, UInt64(count))      # new word, just the count
+                    word_id = push!(kct.counts, W(count & typemax(W)))      # new word, just the count
                 end
                 kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
             else
                 # Word is exclusively owned by this k-mer; safe to pack into it.
                 for _ in 1:missing_counts
-                    new_wid = push!(kct.counts, UInt64(0), last_wid)
+                    new_wid = push!(kct.counts, W(0), last_wid)
                     if last_wid != new_wid
                         kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(new_wid)))
                         last_wid = new_wid
                     end
                 end
 
-                word_id = push!(kct.counts, UInt64(count), last_wid)
+                word_id = push!(kct.counts, W(count & typemax(W)), last_wid)
                 if last_wid != word_id
                     kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
                 end
@@ -357,12 +357,14 @@ function load(path::String)
     @showprogress for i in 1:words_length
         words[i] = read(io, UInt64)
     end
-    bitmap = BitVector(falses(bitmap_length))
-    @showprogress for i in 1:bitmap_length  ## DIVIDE BY WORD SIZE, READ BY WORD SIZE
-        bitmap[i] = read(io, Bool)
+    bitmap = BitVector(undef, bitmap_length)
+    for i in eachindex(bitmap.chunks)
+        bitmap.chunks[i] = read(io, UInt64)
     end
     samples = Ref(read(io, Int64))
-
+    close(io)
+    idx = fill(0:-1, 4^15)
+    return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, samples, version)
 
 end
 
