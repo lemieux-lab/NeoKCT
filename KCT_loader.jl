@@ -6,12 +6,15 @@ function load_kct(path::String)
     end
 end
 
-function write_kct(kct::NeoKCT{K, Ab})
+function write_kct(kct::NeoKCT{K, Ab}, path::String)
     open(path, "w") do io
         write(io, kct, version = kct.version)
     end
 end
 
+### VERSION DEPENDENT LOADERS ###
+
+## V1.0 ##
 function Base.write(io::IO, tuple::Tuple; version::V) where {V in [1.0]}
     write(io, length(tuple))
     write.(io, tuple)
@@ -39,13 +42,15 @@ function Base.write(io::IO, kct::NeoKCT{K, Ab}; version::V) where {K, Ab<:Alphab
 end
 
 function load(io::IO; version::V) where {V in [1.0]}
+    io = open(path, "r")
+    version = read(io, Float64)
     K = read(io, Int64)
     Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
     table_length = read(io, Int64)
     words_length = read(io, Int64)
     bitmap_length = read(io, Int64)
-    table = Vector{K_Element{K, Ab}}(undef, table_length)
-    for i in 1:table_length
+    table = Array{K_Element{K, Ab, 1}, 1}(undef, table_length)
+    @showprogress for i in 1:table_length
         K = read(io, Int64)
         Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
         kmer_C = read(io, Int64)
@@ -55,12 +60,16 @@ function load(io::IO; version::V) where {V in [1.0]}
         table[i] = K_Element{K, Ab, kmer_C}(Kmer{Ab, K, kmer_C}(Kmers.unsafe, data), chunk_ids)
     end
     words = Vector{UInt64}(undef, words_length)
-    for i in 1:words_length
+    @showprogress for i in 1:words_length
         words[i] = read(io, UInt64)
     end
-    bitmap = BitVector(falses(bitmap_length))
-    for i in 1:bitmap_length
-        bitmap[i] = read(io, Bool)
+    bitmap = BitVector(undef, bitmap_length)
+    for i in eachindex(bitmap.chunks)
+        bitmap.chunks[i] = read(io, UInt64)
     end
     samples = Ref(read(io, Int64))
+    close(io)
+    idx = fill(0:-1, 4^15)
+    return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, samples, version)
+
 end

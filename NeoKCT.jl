@@ -16,6 +16,7 @@ include("PackedArray.jl")
 include("AAAlphabet.jl")
 include("BidirArray.jl")
 include("JelloFish.jl")
+include("KCT_loader.jl")
 
 global const VERSION = 1.0
 
@@ -295,78 +296,13 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500
         sample_hashtable = jello_superthreaded_hash(sample, K, chunks)
         push!(kct, sample_hashtable)
         kct = ((i+1) % collapse_every == 0) ? collapse!(kct) : kct 
-        i+1 in save_at_samples && save(kct, save_path*"$(day(now()))_$(month(now()))_$(year(now()))_[$(i+1)_samples]_neokct.kct")
+        i+1 in save_at_samples && write_kct(kct, save_path*"$(day(now()))_$(month(now()))_$(year(now()))_[$(i+1)_samples]_neokct.kct")
         ((i+1) % benchmark_every == 0) && benchmark_kct(kct, save_path*"benchmarks/")
     end
     return kct
 end
 
 to_type(s::String) = eval(Symbol(s))
-
-function save(kct::NeoKCT{K, Ab}, fn::String) where {K, Ab<:Alphabet}
-    f = open(fn, "w")
-    write(fn, kct)
-    close(f)
-end
-
-function Base.write(io::IO, tuple::Tuple)
-    write(io, length(tuple))
-    write.(io, tuple)
-end
-
-function Base.write(io::IO, k_elem::K_Element{K, Ab, C}) where {K, Ab<:AAAlphabet, C}
-    write(io, K)
-    write(io, codeunits(String(Ab.name.singletonname)))
-    write(io, C)
-    write.(io, k_elem.seq.data)
-    write(io, k_elem.chunk_ids)
-end
-
-function Base.write(io::IO, kct::NeoKCT{K, Ab}) where {K, Ab<:Alphabet}
-    write(io, kct.version)
-    write(io, K)
-    write(io, (String(Ab.name.singletonname)))
-    write(io, length(kct.table))
-    write(io, length(kct.counts.words))
-    write(io, length(kct.counts.bitmap))
-    write.(io, kct.table)
-    write(io, kct.counts.words)
-    write(io, kct.counts.bitmap)
-    write(io, kct.samples.x)
-end
-
-function load(path::String)
-    io = open(path, "r")
-    version = read(io, Float64)
-    K = read(io, Int64)
-    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
-    table_length = read(io, Int64)
-    words_length = read(io, Int64)
-    bitmap_length = read(io, Int64)
-    table = Array{K_Element{K, Ab, 1}, 1}(undef, table_length)
-    @showprogress for i in 1:table_length
-        K = read(io, Int64)
-        Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
-        kmer_C = read(io, Int64)
-        data = Tuple(read(io, UInt64) for _ in 1:kmer_C)
-        word_C = read(io, Int64)
-        chunk_ids = Tuple(read(io, UInt32) for _ in 1:word_C)
-        table[i] = K_Element{K, Ab, kmer_C}(Kmer{Ab, K, kmer_C}(Kmers.unsafe, data), chunk_ids)
-    end
-    words = Vector{UInt64}(undef, words_length)
-    @showprogress for i in 1:words_length
-        words[i] = read(io, UInt64)
-    end
-    bitmap = BitVector(undef, bitmap_length)
-    for i in eachindex(bitmap.chunks)
-        bitmap.chunks[i] = read(io, UInt64)
-    end
-    samples = Ref(read(io, Int64))
-    close(io)
-    idx = fill(0:-1, 4^15)
-    return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, samples, version)
-
-end
 
 function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<:Alphabet}
 
