@@ -343,7 +343,7 @@ function load(path::String)
     table_length = read(io, Int64)
     words_length = read(io, Int64)
     bitmap_length = read(io, Int64)
-    table = Vector{K_Element{K, Ab}}(undef, table_length)
+    table = Array{K_Element{K, Ab, 1}, 1}(undef, table_length)
     @showprogress for i in 1:table_length
         K = read(io, Int64)
         Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
