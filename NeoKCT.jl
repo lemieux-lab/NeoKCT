@@ -16,7 +16,7 @@ include("PackedArray.jl")
 include("AAAlphabet.jl")
 include("BidirArray.jl")
 include("JelloFish.jl")
-include("KCT_loader.jl")
+include("KCTLoader.jl")
 
 global const VERSION = 1.0
 
