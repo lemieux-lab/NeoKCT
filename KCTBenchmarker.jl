@@ -1,6 +1,7 @@
 # TODO: Break down plotting into multiple functions (one per plot + reading/updating the benchmark_file)
 
 function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<:Alphabet}
+    mkpath(benchmark_path * "sizes_benchmarks/")
     benchmark_file = benchmark_path * "benchmark_data.json"
     history = isfile(benchmark_file) ? JSON.parsefile(benchmark_file) : []
 
@@ -13,7 +14,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     n_kmers = length(kct.table)
 
     # Query speed benchmark
-    benchmark_size = 10_000_000
+    benchmark_size = 100_000_000
     k_mers = getfield.(rand(kct.table, benchmark_size), :seq)
     t_start = now()
     @showprogress "Benchmarking Query Speed for $benchmark_size k-mers..." for k_mer in k_mers
@@ -50,7 +51,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
          ylabel = "Size (Bytes)",
          xticks = (1:length(xs), xs))
     barplot!(ys, color = ys, strokecolor = :black, strokewidth = 1, bar_labels = ys)
-    CairoMakie.save(benchmark_path * "sizes_benchmark_$(n_samples)_samples.svg", f)
+    CairoMakie.save(benchmark_path * "sizes_benchmarks/sizes_benchmark_$(n_samples)_samples.svg", f)
 
     length(history) <= 1 && return
 
@@ -75,7 +76,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     scatter!(ax2, all_samples, count_words_hist, color = :blue)
     lines!(ax2, all_samples, bitmap_hist, label = "Bitmap (bitmap)", color = :orange)
     scatter!(ax2, all_samples, bitmap_hist, color = :orange)
-    axislegend(ax2)
+    axislegend(ax2, position = :lt)
     CairoMakie.save(benchmark_path * "counts_benchmark.svg", f2)
 
     # --- Plot 3: Index & sequence pointer sizes over samples ---
@@ -89,7 +90,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     scatter!(ax3, all_samples, chunk_ids_hist, color = :green)
     lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seq)", color = :darkgreen)
     scatter!(ax3, all_samples, kmer_seq_hist, color = :darkgreen)
-    axislegend(ax3)
+    axislegend(ax3, position = :lt)
     CairoMakie.save(benchmark_path * "table_benchmark.svg", f3)
 
     # --- Plot 4: Elapsed time (delta + total) ---
@@ -118,7 +119,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     printstyled("Plotting Query Speed...\n", color=:green)
     f5 = Figure()
     ax5 = Axis(f5[1, 1],
-               title = "Query Speed Over Samples (10M k-mer lookups)",
+               title = "Query Speed Over Samples ($benchmark_size k-mer lookups)",
                xlabel = "Sample Count",
                ylabel = "Query Time (ms)")
     lines!(ax5, all_samples, query_time_hist, color = :purple)
