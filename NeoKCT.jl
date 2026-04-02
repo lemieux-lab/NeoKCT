@@ -17,7 +17,7 @@ include("AAAlphabet.jl")
 include("BidirArray.jl")
 include("JelloFish.jl")
 
-global const VERSION = 1.0
+global const VERSION = 1.1
 
 """
 An element in a K-mer Count Table that keeps a K-mer Sequence of a given Alphabet, and indexes towards chunks
