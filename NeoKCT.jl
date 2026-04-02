@@ -93,11 +93,11 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
     deduped, perms, global_perms = permdedup(kct.counts)
     new_table = kct.table
     start_time = now()
-    printstyled("Updating k-mer Indexes...", color=:green)
+    printstyled("Updating k-mer Indexes...\n", color=:green)
     @threads for (i, k_elem) in collect(enumerate(kct.table))
         new_table[i] = K_Element{K, Ab, C}(k_elem.seq, NTuple{length(k_elem.chunk_ids), UInt32}(getindex.(Ref(global_perms), k_elem.chunk_ids)))
     end
-    printstyled("Table Collapse done in: $(now()-start_time)", color=:green)
+    printstyled("Table Collapse done in: $(now()-start_time)\n", color=:green)
     return NeoKCT{K, Ab, W, C}(new_table, deduped, kct.idx, kct.samples)
 end
 
@@ -272,58 +272,16 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500
     return kct
 end
 
-### EXPERIMENTAL
+include("KCTLoader.jl")
+include("KCTBenchmarker.jl")
+
+### EXPERIMENTAL ### 
 
 # temporary path to quickly test on all samples
 samples = readlines(open("/u/jacquinn/phd_stuff/data/tcga_fastqs.paths", "r"))
 
-function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<:Alphabet}
-
-    # Benchmark kct element sizes 
-    f = Figure()
-
-    xs = ["K-mers", "Indexes", "Counts", "Bitmap"]
-    ys = [
-        Base.summarysize(kct.table[begin].seq) * length(kct.table),  # K-mer sequences are constant sizes
-        sum([Base.summarysize(k_elem.chunk_ids) for k_elem in kct.table]),  # Indexes are variable and need to be measured systematically
-        Base.summarysize(kct.counts.words),
-        Base.summarysize(kct.counts.bitmap)
-    ]
-
-    Axis(f[1, 1],
-         title = "$(kct.samples.x) Samples NeoKCT - Component Sizes",
-         subtitle = "Total Size: $(Base.format_bytes(sum(ys))) - [Prefix Index Cost: $(Base.format_bytes(Base.summarysize(kct.idx)))]",
-         ylabel = "Size (Bytes)",
-         xticks = (1:length(xs), xs)
-         )
-
-    barplot!(ys, 
-             color = ys, strokecolor = :black, strokewidth = 1,
-             bar_labels = ys)
-
-    CairoMakie.save(benchmark_path*"sizes_benchmark_$(kct.samples.x)_samples.svg", f)
-
-    # Benchmark kct k-mer request speed
-    k_mers = getfield.(rand(kct.table, 10_000_000), :seq)
-    start = now()
-    for k_mer in k_mers
-        findfirst(k->k==k_mer, kct)
-    end
-    query_time = now()-start
-
-    # Benchmark count table
-
-
-    # Benchmark count indexes
-
-    # Read Benchmark file
-
-    # Compute elapsed time and plot
-
-    # Update benchmark file
-
-end
-
+# Experimental parallised sort merge for adding sample
+# Not functional (currently outclassed as well) 
 function p_sort_merge(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}, n_chunks::Int=200) where {K, Ab<:Alphabet, W<:Unsigned}
     right = psort!(collect(keys(sample_hashtable))) # bit format
     left = kct.table  # K_Element format (use .seq.data[1] to access bits)
@@ -347,6 +305,3 @@ function p_sort_merge(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt
     wait.(threads)
     return ## TODO: Combine sub K_Element table
 end
-
-
-include("KCTLoader.jl")
