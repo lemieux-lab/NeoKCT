@@ -64,7 +64,7 @@ function load(io::IO, version::Val{1.1})
         bitmap.chunks[i] = read(io, UInt64)
     end
 
-    idx = fill(0:-1, 4^15)
+    idx = Ref(0)=>fill(0:-1, 4^15)
     kct = NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, Ref(samples_count), 1.1)
     compute_index!(kct)
     return kct
@@ -121,6 +121,6 @@ function load(io::IO, version::Val{1.0})
         bitmap.chunks[i] = read(io, UInt64)
     end
     samples = Ref(read(io, Int64))
-    idx = fill(0:-1, 4^15)
+    idx = Ref(20)=>fill(0:-1, 4^15)
     return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, samples, 1.0)
 end

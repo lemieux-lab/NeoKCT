@@ -41,13 +41,13 @@ A sorted k-mer count table implementing bitpacked count arrays.
 struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
     table::Vector{K_Element{K, Ab, C}}
     counts::PackedArray{UInt32, W}
-    idx::Pair{Int64, Vector{UnitRange{Int64}}}
+    idx::Pair{Base.RefValue{Int64} , Vector{UnitRange{Int64}}}
     samples::Base.RefValue{Int64}  # Send me to jail for this one
     version::Float64
 end
 
 NeoKCT{K, Ab, W, C}(table, counts, idx, samples) where {K, Ab<:Alphabet, W<:Unsigned, C} = NeoKCT(table, counts, idx, samples, VERSION)
-NeoKCT{K, Ab, W}() where {K, Ab<:Alphabet, W<:Unsigned} = NeoKCT(K_Element{K, Ab, 1}[], PackedArray{UInt32, W}(), 20=>fill(0:-1, 4^15), Ref(1), VERSION)
+NeoKCT{K, Ab, W}() where {K, Ab<:Alphabet, W<:Unsigned} = NeoKCT(K_Element{K, Ab, 1}[], PackedArray{UInt32, W}(), Ref(20)=>fill(0:-1, 4^15), Ref(1), VERSION)
 
 
 # Comparison rules between types that can be sorted here
@@ -82,11 +82,11 @@ function compute_index!(kct::NeoKCT{K, Ab}; prefix_size::Int64=4) where {K, Ab<:
         end
     end
     kct.idx[2][last_key+1] = start:length(kct.table)
-    kct.idx[1] = prefix_size
+    kct.idx[1].x = prefix_size
     return
 end
 
-sizeof_idx_prefix(kct::NeoKCT) = kct.idx[1]
+idx_prefix_size(kct::NeoKCT) = kct.idx[1].x
 
 # WARNING: Will render "in place" KCT invalid (needs more work)
 function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned, C}
