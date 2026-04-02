@@ -11,7 +11,6 @@ using GZip
 using CairoMakie
 
 include("parallel_sort.jl")
-# include("JaggedRLEArrays.jl")
 include("PackedArray.jl")
 include("AAAlphabet.jl")
 include("BidirArray.jl")
@@ -34,10 +33,16 @@ K_Element{K, Ab}(seq::S) where {K, Ab<:Alphabet, S<:Kmer{Ab, K}} = K_Element{K, 
 K_Element{K, Ab}(seq::S) where {K, Ab<:Alphabet, S<:AbstractString} = K_Element{K, Ab, 1}(Kmer{Ab, K, 1}(seq), NTuple{0, UInt32}())
 K_Element{K, Ab}(seq::S, chunk_ids::NTuple) where {K, Ab<:Alphabet, S<:Kmer{Ab, K}} = K_Element{K, Ab, 1}(seq, chunk_ids)
 
+# Comparison rules between types that can be sorted here
 Base.isless(a::K_Element, b::K_Element) = a.seq < b.seq 
 Base.isless(a::Kmer, b::K_Element) = a < b.seq
 Base.isless(a::K_Element, b::Kmer) = a.seq < b
 Base.:(==)(a::K_Element, b::K_Element) = a.seq == b.seq
+
+Base.isless(a::K_Element, b::UInt) = a.seq.data[1] < b 
+Base.isless(a::UInt, b::K_Element) = a < b.seq.data[1]
+Base.:(==)(a::K_Element, b::UInt) = a.seq.data[1] == b
+Base.:(==)(a::UInt, b::K_Element) = a == b.seq.data[1]
 
 
 """
@@ -78,8 +83,6 @@ function compute_index!(kct::NeoKCT{K, Ab}) where {K, Ab<:Alphabet}
     return
 end
 
-#IDEA: Generated function collapse
-
 # WARNING: Will render "in place" KCT invalid (needs more work)
 function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned, C}
     deduped, perms, global_perms = permdedup(kct.counts)
@@ -93,24 +96,10 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
     return NeoKCT{K, Ab, W, C}(new_table, deduped, kct.idx, kct.samples)
 end
 
-# function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alphabet}
-#     symbol_size = bits_per_symbol(Ab())
-#     idx_key = key.data[1] >> (Int(round(K*0.35))*symbol_size) + 1 
-#     r = kct.idx[idx_key]
-#     # r = 1:length(kct.table)
-#     t = @view kct.table[r]
-#     i = searchsortedfirst(t, key)
-#     if i > length(t) || t[i].seq != key
-#         return 0
-#     end
-#     return r[1] + i-1
-# end
-
 function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alphabet}
     symbol_size = bits_per_symbol(Ab())
     idx_key = key.data[1] >> (Int(round(K*0.4))*symbol_size) + 1 
     r = kct.idx[idx_key]
-    # println(r[1], r[2])
     i = searchsortedfirst(kct.table, key, r.start, r.stop, Base.Forward)
     return i != 0 && kct.table[i].seq == key ? i : 0
 end
@@ -125,44 +114,8 @@ function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:
     end
     sort!(kct)
     compute_index!(kct)
-    # kct = collapse ? collapse!(kct) : kct
     return kct
 end
-
-# Pushing a new sample to the NeoKCT
-# function Base.push!(kct::NeoKCT{K, Ab}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet}
-#     @showprogress desc="Adding sample $(kct.samples+1) to table" for (k_bits, count) in sample_hashtable
-#         tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
-#         k_pos = findfi0rst(kct, tmp_seq)
-
-#         word_id = k_pos == 0 ?
-#             push!.(Ref(kct.counts), UInt64.(vcat(zeros(kct.samples), count))) :
-#             push!(kct.counts, UInt64(count), kct.table[k_pos].chunk_ids[end])
-#         k_pos = k_pos == 0 ? length(push!(kct.table, K_Element{K, Ab}(tmp_seq, [word_id]))) : k_pos
-#         if kct.table[k_pos].chunk_ids[end] != word_id
-#             push!(kct.table[k_pos].chunk_ids, word_id)
-#         end
-#     end
-#     sort!(kct)
-#     compute_index!(kct)
-#     return kct
-# end
-
-# function Base.push!(kct::NeoKCT{K, Ab}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet}
-#     @showprogress desc="Adding sample $(kct.samples+1) to table" for (k_bits, count) in sample_hashtable
-#         tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
-#         k_pos = findfirst(kct, tmp_seq)
-
-#         word_id = k_pos == 0 ?
-#             push!.(Ref(kct.counts), UInt64.(vcat(zeros(kct.samples), count))) :
-#             push!(kct.counts, UInt64(count), k_pos)
-#         k_pos = k_pos == 0 ? length(push!(kct.table, K_Element{K, Ab}(tmp_seq, [word_id]))) : k_pos
-#         push!(kct.table[k_pos].chunk_ids, word_id)
-#     end
-#     sort!(kct)
-#     compute_index!(kct)
-#     return kct
-# end
 
 function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
     wid = new_word!(counts)  # allocate word, store nothing
@@ -212,6 +165,14 @@ function find_shared_words(kct::NeoKCT)
     return shared_words
 end
 
+
+# Factimily push! function to interface NTuple like a vector for a more "painless" switch to them in chunk_ids
+function push(tuple::NTuple{N, T}, val::T) where {N, T}
+    return  NTuple{N+1, T}((tuple..., val))
+end
+
+# Main push! from a sample to an existing KCT
+# TODO: This is getting very large, break up the logic across functions
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     shared_words = find_shared_words(kct)
 
@@ -252,7 +213,7 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
                     kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
                 end
             else
-                # Word is exclusively owned by this k-mer; safe to pack into it.
+                # Word is exclusively owned by this k-mer, safe to pack into it.
                 for _ in 1:missing_counts
                     new_wid = push!(kct.counts, W(0), last_wid)
                     if last_wid != new_wid
@@ -286,12 +247,6 @@ function Base.getindex(kct::NeoKCT{K, Ab, W}, i::Integer)  where {K, Ab<:Alphabe
     return kct.table[i].seq => assemble_count_vector(kct, kct.table[i].chunk_ids)
 end
 
-### EXPERIMENTAL
-
-# temporary path to quickly test on all samples
-samples = readlines(open("/u/jacquinn/phd_stuff/data/tcga_fastqs.paths", "r"))
-
-
 function build_kct(sample::String, K::Int=30, chunks::Int = 500_000; word_size::DataType=UInt64, collapse::Bool=true)
     kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(sample, K, chunks))
     kct = collapse ? collapse!(kct) : kct
@@ -311,7 +266,10 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500
     return kct
 end
 
-to_type(s::String) = eval(Symbol(s))
+### EXPERIMENTAL
+
+# temporary path to quickly test on all samples
+samples = readlines(open("/u/jacquinn/phd_stuff/data/tcga_fastqs.paths", "r"))
 
 function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<:Alphabet}
 
@@ -340,7 +298,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     CairoMakie.save(benchmark_path*"sizes_benchmark_$(kct.samples.x)_samples.svg", f)
 
     # Benchmark kct k-mer request speed
-    # k_mers = getfield.(rand(kct.table, 10_000_000), :seq)
+    k_mers = getfield.(rand(kct.table, 10_000_000), :seq)
     # start = now()
     # for k_mer in k_mers
     #     findfirst(k->k==k_mer, kct)
@@ -357,25 +315,6 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
 
     # Update benchmark file
 
-end
-
-# function sort_p_merge
-
-# get_bits(a::UInt) = a
-# get_bits(a::K_Element) = a.seq.data[1]
-
-# Base.isless(a::Union{K_Element, UInt}, b::Union{K_Element, UInt}) = get_bits(a) < get_bits(b) 
-# Base.:(==)(a::Union{K_Element, UInt}, b::Union{K_Element, UInt}) = get_bits(a) == get_bits(b) 
-
-Base.isless(a::K_Element, b::UInt) = a.seq.data[1] < b 
-Base.isless(a::UInt, b::K_Element) = a < b.seq.data[1]
-Base.:(==)(a::K_Element, b::UInt) = a.seq.data[1] == b
-Base.:(==)(a::UInt, b::K_Element) = a == b.seq.data[1]
-
-
-# Factimily push! function to interface NTuple like a vector for a more "painless" switch to them in chunk_ids
-function push(tuple::NTuple{N, T}, val::T) where {N, T}
-    return  NTuple{N+1, T}((tuple..., val))
 end
 
 function p_sort_merge(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}, n_chunks::Int=200) where {K, Ab<:Alphabet, W<:Unsigned}
@@ -402,55 +341,5 @@ function p_sort_merge(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt
     return ## TODO: Combine sub K_Element table
 end
 
-function testing()
-    times = []
-    fastq = "/u/jacquinn/Aboleth/data/gdc_fastq_tests/COAD_TCGA-AA-3688-01A-01R-0905-07/100908_UNC7-RDR3001641_00027_FC_62ER1AAXX.6_R1.fastq"
-    start = now()
-    result_sc = jello_superthreaded_hash(fastq, 30, 500_000)
-    kct = NeoKCT{10, AAAlphabet, UInt64}(result_sc)
-    kct = collapse(kct)
-    push!(times, now()-start)
-    for i in 1:16
-        start = now()
-        result_sc = jello_superthreaded_hash(fastq, 30, 500_000)
-        push!(kct, result_sc)
-        kct = collapse(kct)
-        push!(times, now()-start)
-    end
-    println(times)
-end
-
-function dedup_from_perm(vals::AbstractVector, perm::AbstractVector{<:Integer})
-    n = length(perm)
-    unique_vals = Vector{eltype(vals)}()
-    unique_perm = Int[]
-    invmap = similar(perm, Int)
-
-    if n == 0
-        return unique_vals, unique_perm, invmap
-    end
-
-    # Work on the sorted order
-    first_idx = perm[1]
-    last_val = vals[first_idx]
-    push!(unique_vals, last_val)
-    push!(unique_perm, first_idx)
-    current_unique = 1
-    invmap[first_idx] = current_unique
-
-    @inbounds for k in 2:n
-        idx = perm[k]
-        v = vals[idx]
-        if v != last_val
-            last_val = v
-            current_unique += 1
-            push!(unique_vals, v)
-            push!(unique_perm, idx)
-        end
-        invmap[idx] = current_unique
-    end
-
-    return unique_vals, unique_perm, invmap
-end
 
 include("KCTLoader.jl")
