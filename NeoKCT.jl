@@ -33,6 +33,23 @@ K_Element{K, Ab}(seq::S) where {K, Ab<:Alphabet, S<:Kmer{Ab, K}} = K_Element{K, 
 K_Element{K, Ab}(seq::S) where {K, Ab<:Alphabet, S<:AbstractString} = K_Element{K, Ab, 1}(Kmer{Ab, K, 1}(seq), NTuple{0, UInt32}())
 K_Element{K, Ab}(seq::S, chunk_ids::NTuple) where {K, Ab<:Alphabet, S<:Kmer{Ab, K}} = K_Element{K, Ab, 1}(seq, chunk_ids)
 
+"""
+A sorted k-mer count table implementing bitpacked count arrays.
+
+    NeoKCT{K, Ab<:Alphabet, W<:Unsigned}()
+"""
+struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
+    table::Vector{K_Element{K, Ab, C}}
+    counts::PackedArray{UInt32, W}
+    idx::Pair{Int64, Vector{UnitRange{Int64}}}
+    samples::Base.RefValue{Int64}  # Send me to jail for this one
+    version::Float64
+end
+
+NeoKCT{K, Ab, W, C}(table, counts, idx, samples) where {K, Ab<:Alphabet, W<:Unsigned, C} = NeoKCT(table, counts, idx, samples, VERSION)
+NeoKCT{K, Ab, W}() where {K, Ab<:Alphabet, W<:Unsigned} = NeoKCT(K_Element{K, Ab, 1}[], PackedArray{UInt32, W}(), 20=>fill(0:-1, 4^15), Ref(1), VERSION)
+
+
 # Comparison rules between types that can be sorted here
 Base.isless(a::K_Element, b::K_Element) = a.seq < b.seq 
 Base.isless(a::Kmer, b::K_Element) = a < b.seq
@@ -44,44 +61,32 @@ Base.isless(a::UInt, b::K_Element) = a < b.seq.data[1]
 Base.:(==)(a::K_Element, b::UInt) = a.seq.data[1] == b
 Base.:(==)(a::UInt, b::K_Element) = a == b.seq.data[1]
 
-
-"""
-A sorted k-mer count table implementing bitpacked count arrays.
-
-    NeoKCT{K, Ab<:Alphabet, W<:Unsigned}()
-"""
-struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
-    table::Vector{K_Element{K, Ab, C}}
-    counts::PackedArray{UInt32, W}
-    idx::Vector{UnitRange{Int64}}
-    samples::Base.RefValue{Int64}  # Send me to jail for this one
-    version::Float64
-end
-
-NeoKCT{K, Ab, W, C}(table, counts, idx, samples) where {K, Ab<:Alphabet, W<:Unsigned, C} = NeoKCT(table, counts, idx, samples, VERSION)
-NeoKCT{K, Ab, W}() where {K, Ab<:Alphabet, W<:Unsigned} = NeoKCT(K_Element{K, Ab, 1}[], PackedArray{UInt32, W}(), fill(0:-1, 4^15), Ref(1), VERSION)
-
+# Sorting a kct always calls the parallelised sorter on the table
 Base.sort!(kct::NeoKCT) = psort!(kct.table)
 
-function compute_index!(kct::NeoKCT{K, Ab}) where {K, Ab<:Alphabet}
+# Recomputes the kct.idx based on k-mer prefixes. This speeds up binary search.
+function compute_index!(kct::NeoKCT{K, Ab}; prefix_size::Int64=4) where {K, Ab<:Alphabet}
     start = 1
     last_key = 0x0000000000000000
     symbol_size = bits_per_symbol(Ab())
-    # println(symbol_size)
+    prefix_shift = prefix_size*symbol_size
     
     @showprogress "Computing Binary Search Index..." for i in eachindex(kct.table)
-        key = kct.table[i].seq.data[1] >> (Int(round(K*0.4))*symbol_size)
+        key = kct.table[i].seq.data[1] >> prefix_shift
         if key > last_key
             # println(last_key)
             # last_key+1 > length(kct.idx) && append!(kct.idx, fill(0:-1, length(kct.idx)))  # Currently memory leaks
-            kct.idx[last_key+1] = start:i
+            kct.idx[2][last_key+1] = start:i
             start = i
             last_key = key
         end
     end
-    kct.idx[last_key+1] = start:length(kct.table)
+    kct.idx[2][last_key+1] = start:length(kct.table)
+    kct.idx[1] = prefix_size
     return
 end
+
+sizeof_idx_prefix(kct::NeoKCT) = kct.idx[1]
 
 # WARNING: Will render "in place" KCT invalid (needs more work)
 function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned, C}
@@ -97,9 +102,10 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
 end
 
 function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alphabet}
+    prefix_size = sizeof_idx_prefix(kct)
     symbol_size = bits_per_symbol(Ab())
-    idx_key = key.data[1] >> (Int(round(K*0.4))*symbol_size) + 1 
-    r = kct.idx[idx_key]
+    idx_key = key.data[1] >> (prefix_size*symbol_size) + 1 
+    r = kct.idx[2][idx_key]
     i = searchsortedfirst(kct.table, key, r.start, r.stop, Base.Forward)
     return i != 0 && kct.table[i].seq == key ? i : 0
 end
@@ -286,7 +292,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
 
     Axis(f[1, 1],
          title = "$(kct.samples.x) Samples NeoKCT - Component Sizes",
-         subtitle = "Total Size: $(Base.format_bytes(sum(ys)))",
+         subtitle = "Total Size: $(Base.format_bytes(sum(ys))) - [Prefix Index Cost: $(Base.format_bytes(Base.summarysize(kct.idx)))]",
          ylabel = "Size (Bytes)",
          xticks = (1:length(xs), xs)
          )
@@ -299,13 +305,14 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
 
     # Benchmark kct k-mer request speed
     k_mers = getfield.(rand(kct.table, 10_000_000), :seq)
-    # start = now()
-    # for k_mer in k_mers
-    #     findfirst(k->k==k_mer, kct)
-    # end
-    # query_time = now()-start
+    start = now()
+    for k_mer in k_mers
+        findfirst(k->k==k_mer, kct)
+    end
+    query_time = now()-start
 
     # Benchmark count table
+
 
     # Benchmark count indexes
 
