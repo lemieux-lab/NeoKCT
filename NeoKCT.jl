@@ -88,9 +88,6 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
     printstyled("Updating k-mer Indexes...", color=:green)
     @threads for (i, k_elem) in collect(enumerate(kct.table))
         new_table[i] = K_Element{K, Ab, C}(k_elem.seq, NTuple{length(k_elem.chunk_ids), UInt32}(getindex.(Ref(global_perms), k_elem.chunk_ids)))
-        # for (j, prev_idx) in enumerate(k_elem.chunk_ids)
-        #     new_table[i].chunk_ids[j] = global_perms[prev_idx]
-        # end
     end
     printstyled("Table Collapse done in: $(now()-start_time)", color=:green)
     return NeoKCT{K, Ab, W, C}(new_table, deduped, kct.idx, kct.samples)
@@ -169,11 +166,19 @@ end
 
 function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
     wid = new_word!(counts)  # allocate word, store nothing
+    chunk_ids = UInt32[wid]
     @inbounds for _ in 1:prev_samples
-        wid = push!(counts, W(0), wid)
+        new_wid = push!(counts, W(0), wid)
+        if new_wid != wid
+            push!(chunk_ids, UInt32(new_wid))
+            wid = new_wid
+        end
     end
-    wid = push!(counts, W(count & typemax(W)), wid)
-    return wid
+    new_wid = push!(counts, W(count & typemax(W)), wid)  # add new sample's count
+    if new_wid != wid
+        push!(chunk_ids, UInt32(new_wid))
+    end
+    return NTuple{length(chunk_ids), UInt32}(chunk_ids)
 end
 
 # Unecessary as trailing is assumed and accounted for in the push logic
@@ -207,7 +212,6 @@ function find_shared_words(kct::NeoKCT)
     return shared_words
 end
 
-
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     shared_words = find_shared_words(kct)
 
@@ -217,8 +221,8 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
 
         word_id = 0::Int
         if k_pos == 0
-            word_id = _push_new_kmer_counts!(kct.counts, kct.samples.x, count)
-            ke = K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id)))
+            new_chunk_ids = _push_new_kmer_counts!(kct.counts, kct.samples.x, count)
+            ke = K_Element{K, Ab}(tmp_seq, new_chunk_ids)
             push!(kct.table, ke)
         else
             # Count how many values are already stored for this k-mer across all its chunk words.
@@ -229,18 +233,24 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
             last_wid = Int(kct.table[k_pos].chunk_ids[end])
 
             if last_wid in shared_words
-                # The last word is shared with another k-mer, never modify it in-place.
-                # Allocate fresh word(s) for the missing zeros and the new count.
                 if missing_counts > 0
-                    new_wid = push!(kct.counts, W(0))          # new word, first zero
+                    new_wid = push!(kct.counts, W(0)) # new word, first zero
+                    kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(new_wid)))
                     for _ in 2:missing_counts
-                        new_wid = push!(kct.counts, W(0), new_wid)
+                        next_wid = push!(kct.counts, W(0), new_wid)
+                        if next_wid != new_wid
+                            kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(next_wid)))
+                            new_wid = next_wid
+                        end
                     end
                     word_id = push!(kct.counts, W(count & typemax(W)), new_wid)
+                    if word_id != new_wid
+                        kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
+                    end
                 else
-                    word_id = push!(kct.counts, W(count & typemax(W)))      # new word, just the count
+                    word_id = push!(kct.counts, W(count & typemax(W)))
+                    kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
                 end
-                kct.table[k_pos] = K_Element{K, Ab}(kct.table[k_pos].seq, push(kct.table[k_pos].chunk_ids, UInt32(word_id)))
             else
                 # Word is exclusively owned by this k-mer; safe to pack into it.
                 for _ in 1:missing_counts
@@ -337,10 +347,15 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     # end
     # query_time = now()-start
 
-
     # Benchmark count table
 
     # Benchmark count indexes
+
+    # Read Benchmark file
+
+    # Compute elapsed time and plot
+
+    # Update benchmark file
 
 end
 
