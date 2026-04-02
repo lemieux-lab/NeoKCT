@@ -42,7 +42,7 @@ struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
     table::Vector{K_Element{K, Ab, C}}
     counts::PackedArray{UInt32, W}
     idx::Pair{Base.RefValue{Int64} , Vector{UnitRange{Int64}}}
-    samples::Base.RefValue{Int64}  # Send me to jail for this one
+    samples::Base.RefValue{Int64}
     version::Float64
 end
 
@@ -102,7 +102,7 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
 end
 
 function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alphabet}
-    prefix_size = sizeof_idx_prefix(kct)
+    prefix_size = idx_prefix_size(kct)
     symbol_size = bits_per_symbol(Ab())
     idx_key = key.data[1] >> (prefix_size*symbol_size) + 1 
     r = kct.idx[2][idx_key]
