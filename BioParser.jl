@@ -1,3 +1,11 @@
+if abspath(PROGRAM_FILE) == @__FILE__
+    using Pkg
+    Pkg.activate(".")
+end
+
+using GZip
+using EzXML
+
 abstract type Fq end
 
 struct FastqGZ <: Fq

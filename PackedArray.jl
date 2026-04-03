@@ -1,5 +1,3 @@
-include("parallel_sort.jl")
-
 """
     struct PackedArray{T, W <: Unsigned} words::Vector{W} bitmap::BitVector length::Int end -> Return type
 

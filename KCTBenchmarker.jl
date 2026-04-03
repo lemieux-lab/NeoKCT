@@ -1,5 +1,7 @@
-# TODO: Break down plotting into multiple functions (one per plot + reading/updating the benchmark_file)
+using CairoMakie
+using JSON
 
+# TODO: Break down plotting into multiple functions (one per plot + reading/updating the benchmark_file)
 function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_walkthrough::Bool=false) where {K, Ab<:Alphabet}
     mkpath(benchmark_path * "sizes_benchmarks/")
     benchmark_file = benchmark_path * "benchmark_data.json"

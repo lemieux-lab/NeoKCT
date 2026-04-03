@@ -1,10 +1,13 @@
+if abspath(PROGRAM_FILE) == @__FILE__
+    using Pkg
+    Pkg.activate(".")
+end
+
+using Kmers
 using BioSequences
 using BioSymbols
-using Kmers
 using ProgressMeter
 using Base.Threads
-using EzXML
-using GZip
 
 include("BioParser.jl")
 include("AAAlphabet.jl")
@@ -23,7 +26,6 @@ function translate(kmer::Kmer{Ab}, code::BioSequences.GeneticCode=ncbi_trans_tab
         length(interval) != 3 && break
         code_idx = UInt64(0)
         for (i, k_i) in enumerate(interval)
-            # kmer[k_i] == DNA_N && return
             code_idx |= twobit(kmer[k_i]) << (4-(i-1)*2)
         end
         aa = code[code_idx]
@@ -70,7 +72,6 @@ function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UI
     for seq in io
         push!(current_chunk, seq)
         i += 1
-
         if i % chunking == 0
             to_process = current_chunk
             push!(counting_tasks, @spawn count_kmers(to_process, K, merge_queue,  verbose=true))
@@ -78,13 +79,14 @@ function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UI
             sizehint!(current_chunk, chunking)
 
         end
+
         !verbose && next!(progress; showvalues=[
             ("active counting tasks", length(filter(x->x.state!=:done, counting_tasks))),
             ("items in merge queue", merge_queue.n_avail_items),
             ("chunks sent", i÷chunking)
         ])
-        # i >= 5_000_000 && break  ## REMOVE ME WHEN DONE TESTING
     end
+
     if !isempty(current_chunk)
         push!(counting_tasks, @spawn count_kmers(current_chunk, K, merge_queue, verbose=true))
         !verbose && ProgressMeter.update!(progress; showvalues=[

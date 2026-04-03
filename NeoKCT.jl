@@ -1,20 +1,22 @@
-using Pkg
-Pkg.activate(".")
+if abspath(PROGRAM_FILE) == @__FILE__
+    using Pkg
+    Pkg.activate(".")
+end
 
 using Kmers
 using BioSequences
-using JSON
+using BioSymbols
 using ProgressMeter
 using Base.Threads
 using Dates
-using GZip
-using CairoMakie
 
 include("parallel_sort.jl")
 include("PackedArray.jl")
 include("JelloFish.jl")
 
 global const VERSION = 1.1
+
+# TODO: Rework K_Element into CSR layout for chunk_ids to get this shit back on stack
 
 """
 An element in a K-mer Count Table that keeps a K-mer Sequence of a given Alphabet, and indexes towards chunks
@@ -36,8 +38,6 @@ A sorted k-mer count table implementing bitpacked count arrays.
 
     NeoKCT{K, Ab<:Alphabet, W<:Unsigned}()
 """
-
-# TODO: Rework K_Element into CSR layout for chunk_ids to get this shit back on stack
 struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
     table::Vector{K_Element{K, Ab, C}}
     counts::PackedArray{UInt32, W}
@@ -48,6 +48,23 @@ end
 
 NeoKCT{K, Ab, W, C}(table, counts, idx, samples) where {K, Ab<:Alphabet, W<:Unsigned, C} = NeoKCT(table, counts, idx, samples, VERSION)
 NeoKCT{K, Ab, W}() where {K, Ab<:Alphabet, W<:Unsigned} = NeoKCT(K_Element{K, Ab, 1}[], PackedArray{UInt32, W}(), Ref(20)=>fill(0:-1, 4^15), Ref(1), VERSION)
+
+# Initializing a NeoKCT with the hashtable of a sample
+function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
+    kct = NeoKCT{K, Ab, W}()
+    @showprogress desc="Parsing Hash-Table into KCT..." for (k_bits, count) in sample_hashtable
+        word_id = push!(kct.counts, UInt64(count))
+        tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
+        push!(kct.table, K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id))))
+    end
+    sort!(kct)
+    compute_index!(kct)
+    return kct
+end
+
+# Extra KCT functionalities
+include("KCTLoader.jl")
+include("KCTBenchmarker.jl")
 
 # Comparison rules between types that need to be sortable
 Base.isless(a::K_Element, b::K_Element) = a.seq < b.seq 
@@ -110,19 +127,6 @@ function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alpha
     return i != 0 && kct.table[i].seq == key ? i : 0
 end
 
-# Initializing a NeoKCT with the hashtable of the first sample
-function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
-    kct = NeoKCT{K, Ab, W}()
-    @showprogress desc="Parsing Hash-Table into KCT..." for (k_bits, count) in sample_hashtable
-        word_id = push!(kct.counts, UInt64(count))
-        tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
-        push!(kct.table, K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id))))
-    end
-    sort!(kct)
-    compute_index!(kct)
-    return kct
-end
-
 function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
     wid = new_word!(counts)  # allocate word, store nothing
     chunk_ids = UInt32[wid]
@@ -140,22 +144,8 @@ function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::In
     return NTuple{length(chunk_ids), UInt32}(chunk_ids)
 end
 
-# Unecessary as trailing is assumed and accounted for in the push logic
-function _pad_trailing_zeros!(kct::NeoKCT{K, Ab, W}, target_count::Int) where {K, Ab<:Alphabet, W<:Unsigned}
-    @inbounds for i in eachindex(kct.table)
-        ke = kct.table[i]
-        total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(cid), W)]) for cid in ke.chunk_ids)
-        last_wid = Int(ke.chunk_ids[end])
-        for _ in 1:(target_count - total_stored)
-            new_wid = push!(kct.counts, W(0), last_wid)
-            if new_wid != last_wid
-                kct.table[i] = K_Element{K, Ab}(kct.table[i].seq, push(kct.table[i].chunk_ids, UInt32(new_wid)))
-                last_wid = new_wid
-            end
-        end
-    end
-end
-
+# Go through the chunk_ids to find words pointed to by multiple k-mers
+# Used to allow word-forking in push! when adding a count to a k-mer but not the other
 function find_shared_words(kct::NeoKCT)
     seen_wids = Set{UInt32}()
     shared_words = Set{UInt32}()
@@ -237,9 +227,8 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
 
     sort!(kct)
     compute_index!(kct)
-    # _pad_trailing_zeros!(kct, kct.samples.x + 1)  # pad to new sample count
     kct.samples.x += 1
-    # return kct
+    return kct.samples.x
 end
 
 function assemble_count_vector(kct::NeoKCT{K, Ab, W}, chunk_ids::NTuple) where {K, Ab<:Alphabet, W<:Unsigned}
@@ -270,9 +259,6 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500
     end
     return kct
 end
-
-include("KCTLoader.jl")
-include("KCTBenchmarker.jl")
 
 ### EXPERIMENTAL ### 
 
