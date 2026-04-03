@@ -1,6 +1,6 @@
 # TODO: Break down plotting into multiple functions (one per plot + reading/updating the benchmark_file)
 
-function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<:Alphabet}
+function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_walkthrough::Bool=false) where {K, Ab<:Alphabet}
     mkpath(benchmark_path * "sizes_benchmarks/")
     benchmark_file = benchmark_path * "benchmark_data.json"
     history = isfile(benchmark_file) ? JSON.parsefile(benchmark_file) : []
@@ -47,7 +47,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String) where {K, Ab<
     ys = [kmer_seq_bytes, chunk_ids_bytes, count_words_bytes, bitmap_bytes]
     Axis(f[1, 1],
          title = "$(n_samples) Samples NeoKCT - Component Sizes",
-         subtitle = "Total Size: $(Base.format_bytes(sum(ys))) - [Prefix Index Cost: $(Base.format_bytes(Base.summarysize(kct.idx)))]",
+         subtitle = "Total Components Size: $(Base.format_bytes(sum(ys)))" * (full_pointer_walkthrough ? " - [Full Pointers Walkthrough: $(Base.format_bytes(Base.summarysize(kct)))]" : ""),
          ylabel = "Size (Bytes)",
          xticks = (1:length(xs), xs))
     barplot!(ys, color = ys, strokecolor = :black, strokewidth = 1, bar_labels = ys)

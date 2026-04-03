@@ -36,7 +36,7 @@ function Base.write(io::IO, kct::NeoKCT{K, Ab}, version::V) where {K, Ab<:Alphab
         write(io, Int32(length(k_elem.chunk_ids)))
         for cid in k_elem.chunk_ids; write(io, cid); end
     end
-    write(io, kct.counts.words)             # bulk write
+    write(io, kct.counts.words)  # bulk write
     for chunk in kct.counts.bitmap.chunks
         write(io, chunk)
     end

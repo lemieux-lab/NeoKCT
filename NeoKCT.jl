@@ -12,7 +12,6 @@ using CairoMakie
 
 include("parallel_sort.jl")
 include("PackedArray.jl")
-include("AAAlphabet.jl")
 include("JelloFish.jl")
 
 global const VERSION = 1.1
@@ -37,6 +36,8 @@ A sorted k-mer count table implementing bitpacked count arrays.
 
     NeoKCT{K, Ab<:Alphabet, W<:Unsigned}()
 """
+
+# TODO: Rework K_Element into CSR layout for chunk_ids to get this shit back on stack
 struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
     table::Vector{K_Element{K, Ab, C}}
     counts::PackedArray{UInt32, W}
