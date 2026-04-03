@@ -13,7 +13,6 @@ using CairoMakie
 include("parallel_sort.jl")
 include("PackedArray.jl")
 include("AAAlphabet.jl")
-include("BidirArray.jl")
 include("JelloFish.jl")
 
 global const VERSION = 1.1
@@ -49,8 +48,7 @@ end
 NeoKCT{K, Ab, W, C}(table, counts, idx, samples) where {K, Ab<:Alphabet, W<:Unsigned, C} = NeoKCT(table, counts, idx, samples, VERSION)
 NeoKCT{K, Ab, W}() where {K, Ab<:Alphabet, W<:Unsigned} = NeoKCT(K_Element{K, Ab, 1}[], PackedArray{UInt32, W}(), Ref(20)=>fill(0:-1, 4^15), Ref(1), VERSION)
 
-
-# Comparison rules between types that can be sorted here
+# Comparison rules between types that need to be sortable
 Base.isless(a::K_Element, b::K_Element) = a.seq < b.seq 
 Base.isless(a::Kmer, b::K_Element) = a < b.seq
 Base.isless(a::K_Element, b::Kmer) = a.seq < b
@@ -101,6 +99,7 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
     return NeoKCT{K, Ab, W, C}(new_table, deduped, kct.idx, kct.samples)
 end
 
+# Search for a k-mer in the table. Uses binary search and the k-mer's prefix to search a small region only
 function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alphabet}
     prefix_size = idx_prefix_size(kct)
     symbol_size = bits_per_symbol(Ab())
@@ -113,7 +112,7 @@ end
 # Initializing a NeoKCT with the hashtable of the first sample
 function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     kct = NeoKCT{K, Ab, W}()
-    @showprogress desc="parsing hash table into KCT..." for (k_bits, count) in sample_hashtable
+    @showprogress desc="Parsing Hash-Table into KCT..." for (k_bits, count) in sample_hashtable
         word_id = push!(kct.counts, UInt64(count))
         tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
         push!(kct.table, K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id))))
@@ -147,7 +146,7 @@ function _pad_trailing_zeros!(kct::NeoKCT{K, Ab, W}, target_count::Int) where {K
         total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(cid), W)]) for cid in ke.chunk_ids)
         last_wid = Int(ke.chunk_ids[end])
         for _ in 1:(target_count - total_stored)
-            new_wid = push!(kct.counts, UInt64(0), last_wid)
+            new_wid = push!(kct.counts, W(0), last_wid)
             if new_wid != last_wid
                 kct.table[i] = K_Element{K, Ab}(kct.table[i].seq, push(kct.table[i].chunk_ids, UInt32(new_wid)))
                 last_wid = new_wid
@@ -170,7 +169,6 @@ function find_shared_words(kct::NeoKCT)
     end
     return shared_words
 end
-
 
 # Factimily push! function to interface NTuple like a vector for a more "painless" switch to them in chunk_ids
 function push(tuple::NTuple{N, T}, val::T) where {N, T}
@@ -253,13 +251,13 @@ function Base.getindex(kct::NeoKCT{K, Ab, W}, i::Integer)  where {K, Ab<:Alphabe
     return kct.table[i].seq => assemble_count_vector(kct, kct.table[i].chunk_ids)
 end
 
-function build_kct(sample::String, K::Int=30, chunks::Int = 500_000; word_size::DataType=UInt64, collapse::Bool=true)
+function build_kct(sample::String, K::Int=30, chunks::Int = 500_000; word_size::DataType=UInt128, collapse::Bool=true)
     kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(sample, K, chunks))
     kct = collapse ? collapse!(kct) : kct
     return kct
 end
 
-function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500_000; word_size::DataType=UInt64, save_at_samples::AbstractVector{Int}=Int[], save_path::String = "", collapse_every::Int=1, benchmark_every::Int=5)
+function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500_000; word_size::DataType=UInt128, save_at_samples::AbstractVector{Int}=Int[], save_path::String = "", collapse_every::Int=1, benchmark_every::Int=5)
     kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(popfirst!(samples), K, chunks))
     mkpath(save_path*"benchmarks/")
     for (i, sample) in enumerate(samples)

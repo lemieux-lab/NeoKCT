@@ -6,10 +6,6 @@ using Base.Threads
 using EzXML
 using GZip
 
-# include("JaggedRLEArrays.jl")
-# include("RLEKct.jl")
-# include("thread_utils.jl")
-
 struct Node{Sb<:BioSymbol}
     value::Sb
     nexts::Vector{Node{Sb}}

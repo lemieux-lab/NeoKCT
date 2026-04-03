@@ -1,3 +1,5 @@
+# Global loader. Should work regardless of kct version
+# Dispatches via version, sorted in the first 64 bits of kct file.
 function load_kct(path::String)
     open(path, "r") do io
         version = read(io, Float64)
@@ -6,6 +8,8 @@ function load_kct(path::String)
     end
 end
 
+# Global writer for KCTs. Dispatches the writing strategy based on kct.version
+# Version is always written in the first 64 bits (Float64) to dispatch loader
 function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
     open(path, "w") do io
         write(io, kct.version)

@@ -15,6 +15,7 @@ bitsizeof(e) = sizeof(e) * 8
 PackedArray{T, W}() where {T, W<:Unsigned} = PackedArray{T, W}(W[0], BitVector(falses(bitsizeof(W))), 0)
 PackedArray{T}() where {T} = PackedArray{T, UInt64}(UInt64[0], BitVector(falses(64)), 0)
 
+# Computes the packed version of elem on word, returns the pack size by grabbing left most zero
 function prepack(elem::T, ::Type{W}=UInt64) where {T, W<:Unsigned}
     !isbits(elem) && throw("Type $T is not bits type and cannot be packed")
     
@@ -28,6 +29,7 @@ end
 # assumes bitmap is always word_size*words long
 word_bitmap_slice(word_id::Integer, word_size::DataType=UInt64) = (word_id-1)*bitsizeof(word_size)+1:(word_id-1)*bitsizeof(word_size)+bitsizeof(word_size)
 
+# Last bit position that's set in a word 
 function word_last_set(arr::PackedArray{T, W}, word_id::Integer) where {T, W<:Unsigned}
     last_set = findlast(@view arr.bitmap[word_bitmap_slice(word_id, W)])
     return !isnothing(last_set) ? last_set : 0
@@ -49,6 +51,7 @@ end
 #     return length(arr.words)
 # end
 
+# Adds elem to word at position word_id of array. Adds a new word if not enough space. Returns id of word pushed to
 function Base.push!(arr::PackedArray{T1, W}, elem::T2, word_id::Integer) where {T1, T2, W<:Unsigned}
     # Needs to reinterpret elem and compute packed size
     elem, bitsize = prepack(elem, W)
@@ -68,6 +71,7 @@ function Base.push!(arr::PackedArray{T1, W}, elem::T2, word_id::Integer) where {
     end
 end
 
+# Push elem to a new word of array. Returns id of word pushed to.
 function Base.push!(arr::PackedArray{T, W}, elem) where {T, W<:Unsigned}
     # Without a word_id, we always add a new word with that element (mainly used at initialization)
     elem, _ = prepack(elem, W)
@@ -76,6 +80,7 @@ function Base.push!(arr::PackedArray{T, W}, elem) where {T, W<:Unsigned}
     return push!(arr, elem, length(arr.words))
 end
 
+# Slices bitmap to retrieve value of elem elem_id of word word_id
 function get_val(arr::PackedArray{T, W}, word_id::Integer, elem_id::Integer) where {T, W<:Unsigned}
     word = arr.words[word_id]
     bitmap_word = arr.bitmap[word_bitmap_slice(word_id, W)]
@@ -89,12 +94,14 @@ function get_val(arr::PackedArray{T, W}, word_id::Integer, elem_id::Integer) whe
     return word << start >> (start + (bitsizeof(W)-finish))
 end
 
+# Pushes new empty word to array. Return its id
 function new_word!(arr::PackedArray{T, W}) where {T, W<:Unsigned}
     push!(arr.words, W(0))
     append!(arr.bitmap, falses(bitsizeof(W)))
     return length(arr.words)
 end
 
+# Assemble the full meaning of word word_id (retrieves all values on word by slicing bitmap)
 function assemble_word(arr::PackedArray{T, W}, word_id::Integer) where {T, W<:Unsigned}
     bitmap_word = arr.bitmap[word_bitmap_slice(word_id, W)]
     elem_id = 1
@@ -106,9 +113,11 @@ function assemble_word(arr::PackedArray{T, W}, word_id::Integer) where {T, W<:Un
     return assembly
 end
 
+# Deduplicates words, get permutation array of words, apply to bitmap to update it aswell, returns deduped array and permutations.
+# /!\ Might make arr wrong, need to investigate why? Deduped array stays correct, low priority
 function permdedup(arr::PackedArray{T, W}) where {T, W<:Unsigned}
     uniq = Vector{W}()              
-    indexof = Dict{Pair{UInt64, SubArray}, UInt32}()         
+    indexof = Dict{Pair{W, SubArray}, UInt32}()         
     perm = Vector{UInt32}()
     global_perm = Vector{UInt32}(undef, length(arr.words))
 
