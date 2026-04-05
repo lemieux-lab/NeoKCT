@@ -18,16 +18,16 @@ NeoKCT is built around a memory-efficient k-mer count table that holds billions 
 RNA-Seq FASTQ files
         │
         ▼
-  k-merize + count          (JelloFish.jl parallel, per-chunk)
+  k-merize + count  (JelloFish.jl parallel, per-chunk)
         │  DNA k-mers → amino acid k-mers (5-bit encoding)
         ▼
   per-sample hash table
         │
         ▼
-  push into NeoKCT           (NeoKCT.jl)
+  push into NeoKCT  (NeoKCT.jl)
         │  CSR layout, bit-packed counts, prefix-indexed binary search
         ▼
-  multi-sample KCT           ──► query / join / serialize
+  multi-sample KCT  → query / join / serialize
 ```
  
 Each sample is processed into a k-mer count hash table, then merged into a single `NeoKCT` data structure that grows incrementally. The table can be periodically collapsed (deduplication of count words) and saved to disk in a versioned binary format.
@@ -83,10 +83,10 @@ kct = build_kct("sample.fastq.gz")
 samples = ["s1.fastq.gz", "s2.fastq.gz", "s3.fastq.gz"]
 kct = build_kct(
     samples,
-    30,                        # nucleotide k-mer length (must be divisible by 3)
-    500_000;                   # chunk size for parallel processing
-    word_size = UInt128,       # bit-packing word size
-    collapse_every = 5,        # deduplicate count words every N samples
+    30,  # nucleotide k-mer length (must be divisible by 3)
+    500_000;  # chunk size for parallel processing
+    word_size = UInt128,  # bit-packing word size
+    collapse_every = 5,  # deduplicate count words every N samples
     save_at_samples = [10, 50, 100],
     save_path = "output/"
 )
