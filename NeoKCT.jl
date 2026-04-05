@@ -54,7 +54,7 @@ function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:
     kct = NeoKCT{K, Ab, W}()
     @showprogress desc="Parsing Hash-Table into KCT..." for (k_bits, count) in sample_hashtable
         word_id = push!(kct.counts, UInt64(count))
-        tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
+        tmp_seq = Kmer{Ab, K, 1}((k_bits,))
         push!(kct.table, K_Element{K, Ab}(tmp_seq, NTuple{1, UInt32}(UInt32(word_id))))
     end
     sort!(kct)
@@ -118,7 +118,7 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
 end
 
 # Search for a k-mer in the table. Uses binary search and the k-mer's prefix to search a small region only
-function Base.findfirst(kct::NeoKCT{K, Ab}, key::Mer{K, Ab}) where {K, Ab<:Alphabet}
+function Base.findfirst(kct::NeoKCT{K, Ab}, key::Kmer{Ab, K}) where {K, Ab<:Alphabet}
     prefix_size = idx_prefix_size(kct)
     symbol_size = bits_per_symbol(Ab())
     idx_key = key.data[1] >> (prefix_size*symbol_size) + 1 
@@ -172,7 +172,7 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
     shared_words = find_shared_words(kct)
 
     @showprogress desc="Adding Sample $(kct.samples.x+1) to Table..." for (k_bits, count) in sample_hashtable
-        tmp_seq = Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,))
+        tmp_seq = Kmer{Ab, K, 1}((k_bits,))
         k_pos = findfirst(kct, tmp_seq)
 
         word_id = 0::Int
