@@ -18,7 +18,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
 
     # Query speed benchmark
     benchmark_size = 100_000_000
-    k_mers = getfield.(rand(kct.table, benchmark_size), :seq)
+    k_mers = rand(kct.seqs, benchmark_size)
     t_start = now()
     @showprogress "Benchmarking Query Speed for $benchmark_size k-mers..." for k_mer in k_mers
         findfirst(kct, k_mer)
@@ -86,13 +86,15 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     printstyled("Plotting table size growth...\n", color=:green)
     f3 = Figure()
     ax3 = Axis(f3[1, 1],
-               title  = "Index & Sequence Sizes Over Samples",
+               title  = "CSR Table Sizes Over Samples",
                xlabel = "Sample Count",
                ylabel = "Size (Bytes)")
     lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (chunk_ids)", color = :green)
     scatter!(ax3, all_samples, chunk_ids_hist, color = :green)
-    lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seq)", color = :darkgreen)
+    lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seqs)", color = :darkgreen)
     scatter!(ax3, all_samples, kmer_seq_hist, color = :darkgreen)
+    lines!(ax3, all_samples, offsets_bytes, label = "CSR offsets (offsets_bytes)", color = :lightgreen)
+    scatter!(ax3, all_samples, offsets_bytes, color = :lightgreen)
     axislegend(ax3, position = :lt)
     CairoMakie.save(benchmark_path * "table_benchmark.svg", f3)
 

@@ -115,6 +115,12 @@ function Base.findfirst(kct::NeoKCT{K, Ab}, key::Kmer{Ab, K}) where {K, Ab<:Alph
     return (i in r) && kct.seqs[i] == key.data[1] ? i : 0
 end
 
+# From raw UInt64
+# TODO: This should be default, with assembled k-mers calling this given that seqs are directly stored
+function Base.findfirst(kct::NeoKCT{K, Ab}, key::UInt64) where {K, Ab<:Alphabet}
+    return findfirst(kct, Kmer{Ab, K, 1}(Kmers.unsafe, (key,)))
+end
+
 function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
     wid = new_word!(counts)
     chunk_ids = UInt32[wid]
@@ -264,6 +270,9 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int = 500
     end
     return kct
 end
+
+include("KCTBenchmarker.jl")
+include("KCTLoader.jl")
 
 ### EXPERIMENTAL ### 
 
