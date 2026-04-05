@@ -91,8 +91,8 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
                title  = "CSR Table Sizes Over Samples",
                xlabel = "Sample Count",
                ylabel = "Size (Bytes)")
-    lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (flat_cids)", color = :green)
-    scatter!(ax3, all_samples, chunk_ids_hist, color = :green)
+    lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (flat_cids)", color = :olive)
+    scatter!(ax3, all_samples, chunk_ids_hist, color = :olive)
     lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seqs)", color = :darkgreen)
     scatter!(ax3, all_samples, kmer_seq_hist, color = :darkgreen)
     lines!(ax3, all_samples, offsets_hist, label = "CSR offsets (offsets_bytes)", color = :lightgreen)
