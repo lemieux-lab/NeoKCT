@@ -9,15 +9,16 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
 
     printstyled("Measuring KCT components...\n", color=:green)
     n_samples = kct.samples.x
-    kmer_seq_bytes = Base.summarysize(kct.table[begin].seq) * length(kct.table)
-    chunk_ids_bytes = sum([Base.summarysize(k_elem.chunk_ids) for k_elem in kct.table])
+    n_kmers = length(kct.seqs)
+    kmer_seq_bytes = sizeof(UInt64) * length(kct.seqs)
+    chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
+    offsets_bytes = sizeof(UInt32) * length(kct.offsets)
     count_words_bytes = Base.summarysize(kct.counts.words)
     bitmap_bytes = Base.summarysize(kct.counts.bitmap)
-    n_kmers = length(kct.table)
 
     # Query speed benchmark
     benchmark_size = 100_000_000
-    k_mers = getfield.(rand(kct.table, benchmark_size), :seq)
+    k_mers = rand(kct.seqs, benchmark_size)
     t_start = now()
     @showprogress "Benchmarking Query Speed for $benchmark_size k-mers..." for k_mer in k_mers
         findfirst(kct, k_mer)
@@ -30,6 +31,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
         "timestamp" => string(now()),
         "kmer_seq_bytes" => kmer_seq_bytes,
         "chunk_ids_bytes" => chunk_ids_bytes,
+        "offsets_bytes" => offsets_bytes,
         "count_words_bytes" => count_words_bytes,
         "bitmap_bytes" => bitmap_bytes,
         "n_kmers" => n_kmers,
@@ -63,6 +65,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     bitmap_hist = [e["bitmap_bytes"] for e in history]
     chunk_ids_hist = [e["chunk_ids_bytes"] for e in history]
     kmer_seq_hist = [e["kmer_seq_bytes"] for e in history]
+    offsets_hist = [e["offsets_bytes"] for e in history]
     n_kmers_hist = [e["n_kmers"] for e in history]
     query_time_hist = [e["query_time_ms"] for e in history]
     timestamps = DateTime.(string.(e["timestamp"]) for e in history)
@@ -85,13 +88,15 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     printstyled("Plotting table size growth...\n", color=:green)
     f3 = Figure()
     ax3 = Axis(f3[1, 1],
-               title  = "Index & Sequence Sizes Over Samples",
+               title  = "CSR Table Sizes Over Samples",
                xlabel = "Sample Count",
                ylabel = "Size (Bytes)")
-    lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (chunk_ids)", color = :green)
-    scatter!(ax3, all_samples, chunk_ids_hist, color = :green)
-    lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seq)", color = :darkgreen)
+    lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (flat_cids)", color = :olive)
+    scatter!(ax3, all_samples, chunk_ids_hist, color = :olive)
+    lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seqs)", color = :darkgreen)
     scatter!(ax3, all_samples, kmer_seq_hist, color = :darkgreen)
+    lines!(ax3, all_samples, offsets_hist, label = "CSR offsets (offsets_bytes)", color = :lightgreen)
+    scatter!(ax3, all_samples, offsets_hist, color = :lightgreen)
     axislegend(ax3, position = :lt)
     CairoMakie.save(benchmark_path * "table_benchmark.svg", f3)
 
