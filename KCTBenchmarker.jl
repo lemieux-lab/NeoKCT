@@ -31,6 +31,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
         "timestamp" => string(now()),
         "kmer_seq_bytes" => kmer_seq_bytes,
         "chunk_ids_bytes" => chunk_ids_bytes,
+        "offsets_bytes" => offsets_bytes,
         "count_words_bytes" => count_words_bytes,
         "bitmap_bytes" => bitmap_bytes,
         "n_kmers" => n_kmers,
@@ -64,6 +65,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     bitmap_hist = [e["bitmap_bytes"] for e in history]
     chunk_ids_hist = [e["chunk_ids_bytes"] for e in history]
     kmer_seq_hist = [e["kmer_seq_bytes"] for e in history]
+    offsets_hist = [e["offsets_bytes"] for e in history]
     n_kmers_hist = [e["n_kmers"] for e in history]
     query_time_hist = [e["query_time_ms"] for e in history]
     timestamps = DateTime.(string.(e["timestamp"]) for e in history)
@@ -89,12 +91,12 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
                title  = "CSR Table Sizes Over Samples",
                xlabel = "Sample Count",
                ylabel = "Size (Bytes)")
-    lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (chunk_ids)", color = :green)
+    lines!(ax3, all_samples, chunk_ids_hist, label = "Chunk IDs (flat_cids)", color = :green)
     scatter!(ax3, all_samples, chunk_ids_hist, color = :green)
     lines!(ax3, all_samples, kmer_seq_hist, label = "K-mer Sequences (seqs)", color = :darkgreen)
     scatter!(ax3, all_samples, kmer_seq_hist, color = :darkgreen)
-    lines!(ax3, all_samples, offsets_bytes, label = "CSR offsets (offsets_bytes)", color = :lightgreen)
-    scatter!(ax3, all_samples, offsets_bytes, color = :lightgreen)
+    lines!(ax3, all_samples, offsets_hist, label = "CSR offsets (offsets_bytes)", color = :lightgreen)
+    scatter!(ax3, all_samples, offsets_hist, color = :lightgreen)
     axislegend(ax3, position = :lt)
     CairoMakie.save(benchmark_path * "table_benchmark.svg", f3)
 
