@@ -9,11 +9,12 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
 
     printstyled("Measuring KCT components...\n", color=:green)
     n_samples = kct.samples.x
-    kmer_seq_bytes = Base.summarysize(kct.table[begin].seq) * length(kct.table)
-    chunk_ids_bytes = sum([Base.summarysize(k_elem.chunk_ids) for k_elem in kct.table])
+    n_kmers = length(kct.seqs)
+    kmer_seq_bytes = sizeof(UInt64) * length(kct.seqs)
+    chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
+    offsets_bytes = sizeof(UInt32) * length(kct.offsets)
     count_words_bytes = Base.summarysize(kct.counts.words)
     bitmap_bytes = Base.summarysize(kct.counts.bitmap)
-    n_kmers = length(kct.table)
 
     # Query speed benchmark
     benchmark_size = 100_000_000

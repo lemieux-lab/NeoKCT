@@ -19,7 +19,49 @@ end
 
 ### VERSION DEPENDENT LOADERS ###
 
-## V1.1 ##
+## V1.2 ##
+function Base.write(io::IO, kct::NeoKCT{K, Ab}, ::Val{1.2}) where {K, Ab<:Alphabet}
+    Ab_name = String(Ab.name.singletonname)
+    write(io, Int64(K))
+    write(io, Int64(length(Ab_name)));  write(io, codeunits(Ab_name))
+    write(io, Int64(length(kct.seqs)))  # n_kmers
+    write(io, Int64(length(kct.flat_cids)))  # total chunk_ids
+    write(io, Int64(length(kct.counts.words)))
+    write(io, Int64(length(kct.counts.bitmap)))
+    write(io, Int64(kct.samples.x))
+    write(io, kct.seqs)  # bulk: n_kmers × 8 B
+    write(io, kct.offsets)  # bulk: (n_kmers+1) × 4 B
+    write(io, kct.flat_cids)  # bulk: total_cids × 4 B
+    write(io, kct.counts.words) # bulk
+    for chunk in kct.counts.bitmap.chunks; write(io, chunk); end
+end
+
+function load(io::IO, ::Val{1.2})
+    K = read(io, Int64)
+    Ab_name_len = read(io, Int64)
+    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    n_seqs = read(io, Int64)
+    n_flat_cids = read(io, Int64)
+    words_len = read(io, Int64)
+    bitmap_len = read(io, Int64)
+    n_samples = read(io, Int64)
+
+    seqs = Vector{UInt64}(undef, n_seqs); read!(io, seqs)
+    offsets = Vector{UInt32}(undef, n_seqs + 1); read!(io, offsets)
+    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
+    words = Vector{UInt64}(undef, words_len); read!(io, words)
+    bitmap = BitVector(undef, bitmap_len)
+    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
+
+    idx = Ref(0) => fill(0:-1, 4^15)
+    kct = NeoKCT(seqs, offsets, flat_cids,
+                 PackedArray{UInt32, UInt64}(words, bitmap, words_len),
+                 idx, Ref(n_samples), 1.2)
+    compute_index!(kct)
+    return kct
+end
+
+## V1.1 ##  /!\ NOW DEPRECATED /!\
 function Base.write(io::IO, kct::NeoKCT{K, Ab}, version::V) where {K, Ab<:Alphabet, V<:Val{1.1}}
     Ab_name = String(Ab.name.singletonname)
     kmer_C = isempty(kct.table) ? 1 : length(kct.table[1].seq.data)
