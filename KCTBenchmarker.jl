@@ -47,8 +47,8 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     # --- Plot 1: Component sizes bar chart ---
     printstyled("Plotting Component Sizes...\n", color=:green)
     f = Figure()
-    xs = ["K-mers", "Indexes", "Counts", "Bitmap"]
-    ys = [kmer_seq_bytes, chunk_ids_bytes, count_words_bytes, bitmap_bytes]
+    xs = ["K-mers", "Word-IDs", "Offsets", "Count-Words", "Count-Bitmap"]
+    ys = [kmer_seq_bytes, chunk_ids_bytes, offsets_bytes, count_words_bytes, bitmap_bytes]
     Axis(f[1, 1],
          title = "$(n_samples) Samples NeoKCT - Component Sizes",
          subtitle = "Total Components Size: $(Base.format_bytes(sum(ys)))" * (full_pointer_walkthrough ? " - [Full Pointers Walkthrough: $(Base.format_bytes(Base.summarysize(kct)))]" : ""),
