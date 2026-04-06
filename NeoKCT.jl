@@ -115,12 +115,50 @@ function Base.findfirst(kct::NeoKCT{K, Ab}, key::Kmer{Ab, K}) where {K, Ab<:Alph
     return (i in r) && kct.seqs[i] == key.data[1] ? i : 0
 end
 
-# From raw UInt64
+# From raw UInt64 representing a k-mer stored on a single chunk
 # TODO: This should be default, with assembled k-mers calling this given that seqs are directly stored
 function Base.findfirst(kct::NeoKCT{K, Ab}, key::UInt64) where {K, Ab<:Alphabet}
     return findfirst(kct, Kmer{Ab, K, 1}(Kmers.unsafe, (key,)))
 end
 
+# Push logic for k-mer that was already seen (private, from push!)
+function _push_existing_kmer_counts!(kct::NeoKCT{K, Ab, W}, ext_buf::Dict{Int,Vector{UInt32}},
+                                      k_pos::Int, shared_words::Set{UInt32}, count::UInt32) where {K, Ab<:Alphabet, W<:Unsigned}
+    cur_cids = @view kct.flat_cids[kct.offsets[k_pos] : kct.offsets[k_pos+1]-1] 
+    last_wid = Int(cur_cids[end])
+    total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(c), W)]) for c in cur_cids)
+    missing_counts = kct.samples.x - total_stored
+    ext = get!(ext_buf, k_pos, UInt32[])
+
+    if last_wid in shared_words
+        if missing_counts > 0
+            new_wid = push!(kct.counts, W(0))
+            push!(ext, UInt32(new_wid))
+            for _ in 2:missing_counts
+                next_wid = push!(kct.counts, W(0), new_wid)
+                if next_wid != new_wid
+                    push!(ext, UInt32(next_wid)); new_wid = next_wid
+                end
+            end
+            word_id = push!(kct.counts, W(count & typemax(W)), new_wid)
+            word_id != new_wid && push!(ext, UInt32(word_id))
+        else
+            word_id = push!(kct.counts, W(count & typemax(W)))
+            push!(ext, UInt32(word_id))
+        end
+    else
+        for _ in 1:missing_counts
+            new_wid = push!(kct.counts, W(0), last_wid)
+            if last_wid != new_wid
+                push!(ext, UInt32(new_wid)); last_wid = new_wid
+            end
+        end
+        word_id = push!(kct.counts, W(count & typemax(W)), last_wid)
+        last_wid != word_id && push!(ext, UInt32(word_id))
+    end
+end
+
+# Push logic for k-mer that was never seen (private, from push!)
 function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
     wid = new_word!(counts)
     chunk_ids = UInt32[wid]
@@ -133,7 +171,7 @@ function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::In
     end
     new_wid = push!(counts, W(count & typemax(W)), wid)
     new_wid != wid && push!(chunk_ids, UInt32(new_wid))
-    return chunk_ids   # Vector{UInt32} — callers append directly to flat_cids
+    return chunk_ids  # Vector{UInt32} callers append directly to flat_cids
 end
 
 # Go through the chunk_ids to find words pointed to by multiple k-mers
@@ -153,11 +191,9 @@ function push(tuple::NTuple{N, T}, val::T) where {N, T}
 end
 
 # Main push! from a sample to an existing KCT
-# TODO: This is getting very large, break up the logic across functions
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     shared_words = find_shared_words(kct)
-
-    ext_buf = Dict{Int, Vector{UInt32}}()  # k_pos → extra chunk_ids
+    ext_buf = Dict{Int, Vector{UInt32}}()
     new_seqs = UInt64[]
     new_cids = Vector{UInt32}[]
 
@@ -169,39 +205,7 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
             push!(new_seqs, k_bits)
             push!(new_cids, _push_new_kmer_counts!(kct.counts, kct.samples.x, count))
         else
-            # Existing k-mer: extend via ext_buf (empty on first encounter per push! call)
-            cur_cids = @view kct.flat_cids[kct.offsets[k_pos] : kct.offsets[k_pos+1]-1]
-            last_wid = Int(cur_cids[end])
-            total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(c), W)]) for c in cur_cids)
-            missing_counts = kct.samples.x - total_stored
-            ext = get!(ext_buf, k_pos, UInt32[])
-
-            if last_wid in shared_words
-                if missing_counts > 0
-                    new_wid = push!(kct.counts, W(0))  # allocate fresh word
-                    push!(ext, UInt32(new_wid))
-                    for _ in 2:missing_counts
-                        next_wid = push!(kct.counts, W(0), new_wid)
-                        if next_wid != new_wid
-                            push!(ext, UInt32(next_wid)); new_wid = next_wid
-                        end
-                    end
-                    word_id = push!(kct.counts, W(count & typemax(W)), new_wid)
-                    word_id != new_wid && push!(ext, UInt32(word_id))
-                else
-                    word_id = push!(kct.counts, W(count & typemax(W)))
-                    push!(ext, UInt32(word_id))
-                end
-            else
-                for _ in 1:missing_counts
-                    new_wid = push!(kct.counts, W(0), last_wid)
-                    if last_wid != new_wid
-                        push!(ext, UInt32(new_wid)); last_wid = new_wid
-                    end
-                end
-                word_id = push!(kct.counts, W(count & typemax(W)), last_wid)
-                last_wid != word_id && push!(ext, UInt32(word_id))
-            end
+            _push_existing_kmer_counts!(kct, ext_buf, k_pos, shared_words, count)
         end
     end
 
@@ -278,29 +282,3 @@ include("KCTLoader.jl")
 
 # temporary path to quickly test on all samples
 samples = readlines(open("/u/jacquinn/phd_stuff/data/tcga_fastqs.paths", "r"))
-
-# Experimental parallised sort merge for adding sample
-# Not functional (currently outclassed as well) 
-function p_sort_merge(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}, n_chunks::Int=200) where {K, Ab<:Alphabet, W<:Unsigned}
-    right = psort!(collect(keys(sample_hashtable))) # bit format
-    left = kct.table  # K_Element format (use .seq.data[1] to access bits)
-    
-    cutoffs_left = length(left)÷n_chunks:length(left)÷n_chunks:length(left)
-    cutoffs_right = searchsortedfirst.(Ref(right), left[cutoffs_left])
-
-    merge_blocks = Vector{Vector{K_Element{K, Ab}}}(undef, n_chunks)
-    threads = Vector{Task}(undef, n_chunks)
-    prev_left = 0
-    prev_right = 0
-
-    @showprogress for thread in 1:nchunks
-        left_block = left[prev_left:cutoffs_left[thread]]
-        right_block = right[prev_right:cutoffs_right[thread]]
-        threads[thread] = @spawn merge_blocks[i] = smerge(left_bloc, right_block)
-
-        prev_left, prev_right = cutoffs_left[thread], cutoffs_right[thread]
-    end
-
-    wait.(threads)
-    return ## TODO: Combine sub K_Element table
-end
