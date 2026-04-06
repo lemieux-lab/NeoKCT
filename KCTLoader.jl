@@ -17,10 +17,22 @@ function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
     end
 end
 
-### VERSION DEPENDENT LOADERS ###
+# Translation code for word size of the count table saved on disk to its corresponding type 
+const _WORD_TYPES = Dict{Int64, DataType}(
+    1 => UInt8, 2 => UInt16, 4 => UInt32, 8 => UInt64, 16 => UInt128
+)
 
+# Get version of a written kct file
+function get_version(path::String)
+    open(path, "r") do
+        return read(io, Float64)
+    end
+end
+
+### VERSION DEPENDENT LOADERS ###
 ## V1.2 ##
-function Base.write(io::IO, kct::NeoKCT{K, Ab}, ::Val{1.2}) where {K, Ab<:Alphabet}
+# TODO: Save word size
+function Base.write(io::IO, kct::NeoKCT{K, Ab, W}, ::Val{1.2}) where {K, Ab<:Alphabet, W<:Unsigned}
     Ab_name = String(Ab.name.singletonname)
     write(io, Int64(K))
     write(io, Int64(length(Ab_name)));  write(io, codeunits(Ab_name))
@@ -29,10 +41,11 @@ function Base.write(io::IO, kct::NeoKCT{K, Ab}, ::Val{1.2}) where {K, Ab<:Alphab
     write(io, Int64(length(kct.counts.words)))
     write(io, Int64(length(kct.counts.bitmap)))
     write(io, Int64(kct.samples.x))
-    write(io, kct.seqs)  # bulk: n_kmers × 8 B
-    write(io, kct.offsets)  # bulk: (n_kmers+1) × 4 B
-    write(io, kct.flat_cids)  # bulk: total_cids × 4 B
-    write(io, kct.counts.words) # bulk
+    write(io, Int64(sizeof(W)))  # word size in bytes
+    write(io, kct.seqs)
+    write(io, kct.offsets)
+    write(io, kct.flat_cids)
+    write(io, kct.counts.words)
     for chunk in kct.counts.bitmap.chunks; write(io, chunk); end
 end
 
@@ -45,23 +58,26 @@ function load(io::IO, ::Val{1.2})
     words_len = read(io, Int64)
     bitmap_len = read(io, Int64)
     n_samples = read(io, Int64)
+    word_size_bytes = read(io, Int64)
+
+    W = _WORD_TYPES[word_size_bytes]
 
     seqs = Vector{UInt64}(undef, n_seqs); read!(io, seqs)
     offsets = Vector{UInt32}(undef, n_seqs + 1); read!(io, offsets)
     flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
-    words = Vector{UInt64}(undef, words_len); read!(io, words)
+    words = Vector{W}(undef, words_len); read!(io, words)
     bitmap = BitVector(undef, bitmap_len)
     for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
 
     idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT(seqs, offsets, flat_cids,
-                 PackedArray{UInt32, UInt64}(words, bitmap, words_len),
-                 idx, Ref(n_samples), 1.2)
+    kct = NeoKCT{K, Ab, W, 1}(seqs, offsets, flat_cids,
+                 PackedArray{UInt32, W}(words, bitmap, words_len),
+                 idx, Ref(n_samples), 1.3)
     compute_index!(kct)
     return kct
 end
 
-# ## V1.1 ##  /!\ NOW DEPRECATED /!\
+# ## V1.1 ##  /!\ NOW FULLY DEPRECATED /!\
 # function Base.write(io::IO, kct::NeoKCT{K, Ab}, version::V) where {K, Ab<:Alphabet, V<:Val{1.1}}
 #     Ab_name = String(Ab.name.singletonname)
 #     kmer_C = isempty(kct.table) ? 1 : length(kct.table[1].seq.data)
