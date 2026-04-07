@@ -52,7 +52,7 @@ function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:
     return kct
 end
 
-## KCT reading ##
+## KCT Reading ##
 
 idx_prefix_size(kct::NeoKCT) = kct.idx[1].x
 
@@ -95,12 +95,7 @@ function find_shared_words(kct::NeoKCT)
     return shared
 end
 
-## KCT pushing sample ##
-
-# Factimily push! function to interface NTuple like a vector for a more "painless" switch to them in chunk_ids
-function push(tuple::NTuple{N, T}, val::T) where {N, T}
-    return  NTuple{N+1, T}((tuple..., val))
-end
+## KCT Pushing Sample ##
 
 # Main push! from a sample to an existing KCT
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
@@ -283,7 +278,6 @@ function Base.sort!(kct::NeoKCT)
     resize!(kct.n_cids, length(new_n_cids)); copyto!(kct.n_cids, new_n_cids)
     return kct
 end
-
 
 ## KCT Building ##
 
