@@ -14,7 +14,7 @@ include("parallel_sort.jl")
 include("PackedArray.jl")
 include("JelloFish.jl")
 
-global const VERSION = 1.2
+global const VERSION = 1.3
 
 struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
     seqs::Vector{UInt64}

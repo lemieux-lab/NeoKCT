@@ -20,6 +20,7 @@ function plot_component_sizes(
     n_samples::Int,
     kmer_seq_bytes::Int,
     chunk_ids_bytes::Int,
+    n_cids_bytes::Int,
     count_words_bytes::Int,
     bitmap_bytes::Int;
     full_pointer_walkthrough::Bool = false,
@@ -27,8 +28,8 @@ function plot_component_sizes(
 )
     printstyled("Plotting Component Sizes...\n", color=:green)
     f = Figure()
-    xs = ["K-mers", "Indexes", "Counts", "Bitmap"]
-    ys = [kmer_seq_bytes, chunk_ids_bytes, count_words_bytes, bitmap_bytes]
+    xs = ["K-mers", "Indexes", "Δ-Positions", "Counts", "Bitmap"]
+    ys = [kmer_seq_bytes, chunk_ids_bytes, n_cids_bytes, count_words_bytes, bitmap_bytes]
     Axis(f[1, 1],
          title    = "$(n_samples) Samples NeoKCT - Component Sizes",
          subtitle = "Total Components Size: $(Base.format_bytes(sum(ys)))" *
@@ -59,13 +60,13 @@ function plot_counts_growth(history::Vector{Any})
     return f
 end
 
-# Plot growth of seqs/offsets/cids with added samples
+# Plot growth of seqs/n_cids/cids with added samples
 function plot_table_growth(history::Vector{Any})
     printstyled("Plotting table size growth...\n", color=:green)
     all_samples = [e["samples"]         for e in history]
     chunk_ids_hist = [e["chunk_ids_bytes"] for e in history]
     kmer_seq_hist = [e["kmer_seq_bytes"]  for e in history]
-    offsets_hist = [e["offsets_bytes"]   for e in history]
+    n_cids_hist = [e["n_cids_bytes"]   for e in history]
     f = Figure()
     ax = Axis(f[1, 1],
               title = "CSR Table Sizes Over Samples",
@@ -75,8 +76,8 @@ function plot_table_growth(history::Vector{Any})
     scatter!(ax, all_samples, chunk_ids_hist, color = :olive)
     lines!(ax, all_samples, kmer_seq_hist, label = "K-mer Sequences (seqs)", color = :darkgreen)
     scatter!(ax, all_samples, kmer_seq_hist, color = :darkgreen)
-    lines!(ax, all_samples, offsets_hist, label = "CSR offsets (offsets_bytes)", color = :lightgreen)
-    scatter!(ax, all_samples, offsets_hist, color = :lightgreen)
+    lines!(ax, all_samples, n_cids_hist, label = "Chunk IDs Δ-Positions (n_cids)", color = :lightgreen)
+    scatter!(ax, all_samples, n_cids_hist, color = :lightgreen)
     axislegend(ax, position = :lt)
     return f
 end
@@ -148,7 +149,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     n_kmers = length(kct.seqs)
     kmer_seq_bytes = sizeof(UInt64) * length(kct.seqs)
     chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
-    offsets_bytes = sizeof(UInt32) * length(kct.offsets)
+    n_cids_bytes = sizeof(UInt32) * length(kct.n_cids)
     count_words_bytes = Base.summarysize(kct.counts.words)
     bitmap_bytes = Base.summarysize(kct.counts.bitmap)
 
@@ -165,7 +166,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
         "timestamp" => string(now()),
         "kmer_seq_bytes" => kmer_seq_bytes,
         "chunk_ids_bytes" => chunk_ids_bytes,
-        "offsets_bytes" => offsets_bytes,
+        "n_cids_bytes" => n_cids_bytes,
         "count_words_bytes" => count_words_bytes,
         "bitmap_bytes" => bitmap_bytes,
         "n_kmers" => n_kmers,
@@ -174,7 +175,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     save_benchmark_history!(history, entry, benchmark_file)
 
     f1 = plot_component_sizes(n_samples,
-                         kmer_seq_bytes, chunk_ids_bytes, count_words_bytes, bitmap_bytes;
+                         kmer_seq_bytes, chunk_ids_bytes, n_cids_bytes, count_words_bytes, bitmap_bytes;
                          full_pointer_walkthrough=full_pointer_walkthrough, kct=kct)
 
     CairoMakie.save(benchmark_path * "sizes_benchmarks/sizes_benchmark_$(n_samples)_samples.svg", f1)
