@@ -37,12 +37,12 @@ Each sample is processed into a k-mer count hash table, then merged into a singl
 ## Key Technical Features
  
 - **Bit-packed count storage** (`PackedArray`): variable-width values packed into fixed-size words, dramatically reducing memory footprint compared to standard arrays.
-- **Compressed Sparse Row (CSR) layout**: k-mer sequences, offset arrays, and count word IDs are stored in three flat vectors, minimizing per-entry allocation overhead.
+- **Compressed Sparse Row (CSR) layout**: k-mer sequences, offset arrays (retrieved by cumulative sum of cids/k-mer), and count word IDs are stored in three flat vectors, minimizing per-entry allocation overhead.
 - **Prefix-indexed binary search**: a 4-symbol prefix index (20-bit for amino acids) partitions the sorted k-mer list into ~160,000 buckets, accelerating lookup.
 - **Parallel k-merization**: multi-threaded chunk-based processing of FASTQ files with parallel hash-table merging (`jello_superthreaded_hash`).
 - **Parallel merge-sort**: task-based divide-and-conquer sort used when integrating new samples into the table.
 - **DNA → amino acid translation**: nucleotide k-mers are translated to amino acid k-mers using a custom 5-bit alphabet, enabling peptide-level queries.
-- **Versioned binary serialization**: tables are written/read in a compact binary format (current: v1.2) with metadata headers.
+- **Versioned binary serialization**: tables are written/read in a compact binary format (current: v1.3, v1.2 loading still supported with conversion to 1.3 layout) with metadata headers.
  
 ---
  
@@ -110,7 +110,7 @@ kct[i]
 | `PackedArray.jl` | Bit-packed variable-width array and deduplication |
 | `JelloFish.jl` | Parallel k-merization and counting from FASTQ |
 | `AAAlphabet.jl` | Custom 5-bit amino acid alphabet for `BioSequences` |
-| `KCTLoader.jl` | Binary serialization / deserialization (v1.2) |
+| `KCTLoader.jl` | Binary serialization / deserialization (v1.3) |
 | `KCTBenchmarker.jl` | Memory and performance benchmarking with SVG plots |
 | `BioParser.jl` | Unified reader for FASTQ, gzipped FASTQ, and mzid files |
 | `parallel_sort.jl` | Task-based parallel merge-sort |
