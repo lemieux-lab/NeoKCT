@@ -18,7 +18,7 @@ global const VERSION = 1.2
 
 struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
     seqs::Vector{UInt64}
-    offsets::Vector{UInt32}
+    n_cids::Vector{UInt16}  # Number of cids per k-mer (essentially delta-encoded offset values of cid positions)
     flat_cids::Vector{UInt32}
     counts::PackedArray{UInt32, W}
     idx::Pair{Base.RefValue{Int64}, Vector{UnitRange{Int64}}}
@@ -27,14 +27,27 @@ struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
 end
 
 # Convenience constructors
-NeoKCT{K,Ab,W,C}(seqs, offsets, flat_cids, counts, idx, samples) where {K,Ab<:Alphabet,W<:Unsigned,C} =
-    NeoKCT{K,Ab,W,C}(seqs, offsets, flat_cids, counts, idx, samples, VERSION)
+NeoKCT{K,Ab,W,C}(seqs, n_cids, flat_cids, counts, idx, samples) where {K,Ab<:Alphabet,W<:Unsigned,C} =
+    NeoKCT{K,Ab,W,C}(seqs, n_cids, flat_cids, counts, idx, samples, VERSION)
 
 NeoKCT{K,Ab,W}() where {K,Ab<:Alphabet,W<:Unsigned} = NeoKCT{K,Ab,W,1}(
-    UInt64[], UInt32[UInt32(1)], UInt32[],
+    UInt64[], UInt16[], UInt32[],
     PackedArray{UInt32,W}(),
     Ref(20) => fill(0:-1, 4^15),
     Ref(1), VERSION)
+
+# Compute a 1-based start offset into flat_cids for each k-mer from n_cids.
+# Returns Vector{UInt64} of length n+1: offsets[i] is the start of k-mer i's cids,
+# offsets[n+1] = length(flat_cids) + 1. 
+# This is O(n) on n_cids and heavy on memory. Use sparingly.
+function _kmer_offsets(n_cids::Vector{UInt16})::Vector{UInt64}
+    offsets = Vector{UInt64}(undef, length(n_cids) + 1)
+    offsets[1] = 1
+    for i in eachindex(n_cids)
+        offsets[i+1] = offsets[i] + n_cids[i]
+    end
+    return offsets
+end
 
 # Build KCT of 1 sample from a count hashtable from JelloFish
 function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
@@ -43,7 +56,7 @@ function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:
         word_id = push!(kct.counts, UInt64(count))
         push!(kct.seqs, k_bits)
         push!(kct.flat_cids, UInt32(word_id))
-        push!(kct.offsets, kct.offsets[end] + UInt32(1))
+        push!(kct.n_cids, UInt16(1))  # each new k-mer starts with exactly 1 cid
     end
     sort!(kct)
     compute_index!(kct)
@@ -55,25 +68,24 @@ idx_prefix_size(kct::NeoKCT) = kct.idx[1].x
 # Sorting a KCT is done via psort!, sorts the k-mer sequences, distributing across pivots between threads
 function Base.sort!(kct::NeoKCT)
     isempty(kct.seqs) && return kct
-    perm = psortperm(kct.seqs)  # parallel merge-sort, returns permutation index
+    perm = psortperm(kct.seqs)
 
-    # Apply permutation to seqs in-place
     kct.seqs[:] = kct.seqs[perm]
 
-    # Rebuild flat_cids and offsets in sorted order (single pass, one allocation)
+    offsets = _kmer_offsets(kct.n_cids)
     new_flat = UInt32[]
     sizehint!(new_flat, length(kct.flat_cids))
-    new_off = UInt32[UInt32(1)]
-    sizehint!(new_off, length(kct.seqs) + 1)
+    new_n_cids = UInt16[]
+    sizehint!(new_n_cids, length(kct.seqs))
 
     for i in perm
-        lo, hi = kct.offsets[i], kct.offsets[i+1] - UInt32(1)
+        lo, hi = offsets[i], offsets[i+1] - 1
         append!(new_flat, @view kct.flat_cids[lo:hi])
-        push!(new_off, UInt32(length(new_flat) + 1))
+        push!(new_n_cids, kct.n_cids[i])
     end
 
     resize!(kct.flat_cids, length(new_flat)); copyto!(kct.flat_cids, new_flat)
-    resize!(kct.offsets, length(new_off)); copyto!(kct.offsets, new_off)
+    resize!(kct.n_cids, length(new_n_cids)); copyto!(kct.n_cids, new_n_cids)
     return kct
 end
 
@@ -104,7 +116,7 @@ function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned
         new_flat[i] = UInt32(global_perms[kct.flat_cids[i]])
     end
     printstyled("Collapse done\n", color=:green)
-    return NeoKCT{K, Ab, W, C}(kct.seqs, kct.offsets, new_flat, deduped, kct.idx, kct.samples)
+    return NeoKCT{K, Ab, W, C}(kct.seqs, kct.n_cids, new_flat, deduped, kct.idx, kct.samples)
 end
 
 # Search for a k-mer in the table. Uses binary search and the k-mer's prefix to search a small region only
@@ -123,8 +135,9 @@ end
 
 # Push logic for k-mer that was already seen (private, from push!)
 function _push_existing_kmer_counts!(kct::NeoKCT{K, Ab, W}, ext_buf::Dict{Int,Vector{UInt32}},
-                                      k_pos::Int, shared_words::Set{UInt32}, count::UInt32) where {K, Ab<:Alphabet, W<:Unsigned}
-    cur_cids = @view kct.flat_cids[kct.offsets[k_pos] : kct.offsets[k_pos+1]-1] 
+                                      k_pos::Int, shared_words::Set{UInt32}, count::UInt32,
+                                      offsets::Vector{UInt64}) where {K, Ab<:Alphabet, W<:Unsigned}
+    cur_cids = @view kct.flat_cids[offsets[k_pos] : offsets[k_pos+1]-1]
     last_wid = Int(cur_cids[end])
     total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(c), W)]) for c in cur_cids)
     missing_counts = kct.samples.x - total_stored
@@ -193,6 +206,7 @@ end
 # Main push! from a sample to an existing KCT
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     shared_words = find_shared_words(kct)
+    offsets = _kmer_offsets(kct.n_cids)  # compute once for all per-kmer lookups
     ext_buf = Dict{Int, Vector{UInt32}}()
     new_seqs = UInt64[]
     new_cids = Vector{UInt32}[]
@@ -205,47 +219,50 @@ function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32
             push!(new_seqs, k_bits)
             push!(new_cids, _push_new_kmer_counts!(kct.counts, kct.samples.x, count))
         else
-            _push_existing_kmer_counts!(kct, ext_buf, k_pos, shared_words, count)
+            _push_existing_kmer_counts!(kct, ext_buf, k_pos, shared_words, count, offsets)
         end
     end
 
-    _merge_and_sort!(kct, ext_buf, new_seqs, new_cids)
+    _merge_and_sort!(kct, ext_buf, new_seqs, new_cids, offsets)
     compute_index!(kct)
     kct.samples.x += 1
 end
 
 function _merge_and_sort!(kct::NeoKCT, ext_buf::Dict{Int,Vector{UInt32}},
-                           new_seqs::Vector{UInt64}, new_cids::Vector{Vector{UInt32}})
+                           new_seqs::Vector{UInt64}, new_cids::Vector{Vector{UInt32}},
+                           offsets::Vector{UInt64})
     n_existing = length(kct.seqs)
     n_new = length(new_seqs)
     n_total = n_existing + n_new
 
     all_seqs = vcat(kct.seqs, new_seqs)
-    perm = psortperm(all_seqs)  # parallel sort of combined seq list
+    perm = psortperm(all_seqs)
 
     new_flat = UInt32[]
     sizehint!(new_flat, length(kct.flat_cids) + sum(length, values(ext_buf); init=0) +
                         sum(length, new_cids; init=0))
-    new_off = UInt32[UInt32(1)]
-    sizehint!(new_off, n_total + 1)
+    new_n_cids = UInt16[]
+    sizehint!(new_n_cids, n_total)
 
     for i in perm
+        cids_start = length(new_flat)
         if i <= n_existing
-            append!(new_flat, @view kct.flat_cids[kct.offsets[i] : kct.offsets[i+1]-1])
+            append!(new_flat, @view kct.flat_cids[offsets[i] : offsets[i+1]-1])
             haskey(ext_buf, i) && append!(new_flat, ext_buf[i])
         else
             append!(new_flat, new_cids[i - n_existing])
         end
-        push!(new_off, UInt32(length(new_flat) + 1))
+        push!(new_n_cids, UInt16(length(new_flat) - cids_start))  # always small, no overflow
     end
 
     resize!(kct.seqs, n_total); copyto!(kct.seqs, all_seqs[perm])
     resize!(kct.flat_cids, length(new_flat)); copyto!(kct.flat_cids, new_flat)
-    resize!(kct.offsets, length(new_off)); copyto!(kct.offsets, new_off)
+    resize!(kct.n_cids, length(new_n_cids)); copyto!(kct.n_cids, new_n_cids)
 end
 
 function assemble_count_vector(kct::NeoKCT{K, Ab, W}, i::Integer) where {K, Ab<:Alphabet, W<:Unsigned}
-    cids   = @view kct.flat_cids[kct.offsets[i] : kct.offsets[i+1]-1]
+    lo = 1 + Int64(sum(@view kct.n_cids[1:i-1]))
+    cids = @view kct.flat_cids[lo : lo + kct.n_cids[i] - 1]
     counts = reduce(vcat, [assemble_word(kct.counts, Int(c)) for c in cids])
     n_missing = kct.samples.x - length(counts)
     return n_missing > 0 ? vcat(counts, zeros(W, n_missing)) : counts
