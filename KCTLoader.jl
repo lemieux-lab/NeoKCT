@@ -1,15 +1,12 @@
-# Global loader. Should work regardless of kct version
-# Dispatches via version, sorted in the first 64 bits of kct file.
+# Global loader. Dispatches via version stored in the first 64 bits of the file.
 function load_kct(path::String)
     open(path, "r") do io
         version = read(io, Float64)
-        kct = load(io, Val(version))
-        return kct
+        return load(io, Val(version))
     end
 end
 
-# Global writer for KCTs. Dispatches the writing strategy based on kct.version
-# Version is always written in the first 64 bits (Float64) to dispatch loader
+# Global writer. Dispatches the writing strategy based on kct.version.
 function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
     open(path, "w") do io
         write(io, kct.version)
@@ -17,32 +14,91 @@ function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
     end
 end
 
-# Translation code for word size of the count table saved on disk to its corresponding type 
 const _WORD_TYPES = Dict{Int64, DataType}(
     1 => UInt8, 2 => UInt16, 4 => UInt32, 8 => UInt64, 16 => UInt128
 )
 
-# Get version of a written kct file
 function get_version(path::String)
-    open(path, "r") do
+    open(path, "r") do io
         return read(io, Float64)
     end
 end
 
 ### VERSION DEPENDENT LOADERS ###
-## V1.3 ##
-function Base.write(io::IO, kct::NeoKCT{K, Ab, W}, ::Val{1.3}) where {K, Ab<:Alphabet, W<:Unsigned}
+## V1.4 ##
+function Base.write(io::IO, kct::NeoKCT{K, Ab, W, C}, ::Val{1.4}) where {K, Ab<:Alphabet, W<:Unsigned, C}
     Ab_name = String(Ab.name.singletonname)
     write(io, Int64(K))
-    write(io, Int64(length(Ab_name)));  write(io, codeunits(Ab_name))
-    write(io, Int64(length(kct.seqs)))        # n_kmers
-    write(io, Int64(length(kct.flat_cids)))   # total cids
+    write(io, Int64(length(Ab_name))); write(io, codeunits(Ab_name))
+    write(io, Int64(length(kct.seqs)))  # n_kmers
+    write(io, Int64(length(kct.flat_cids)))
     write(io, Int64(length(kct.counts.words)))
     write(io, Int64(length(kct.counts.bitmap)))
     write(io, Int64(kct.samples.x))
-    write(io, Int64(sizeof(W)))               # word size in bytes
-    write(io, kct.seqs)
-    write(io, kct.n_cids)                     # UInt16 per k-mer (n_kmers elements)
+    write(io, Int64(sizeof(W)))
+    # DeltaArray fields
+    write(io, Int64(kct.seqs.checkpoint_interval))
+    write(io, Int64(length(kct.seqs.checkpoints)))
+    write(io, Int64(length(kct.seqs.regular_cp_idx)))
+    write(io, kct.seqs.checkpoints)
+    write(io, kct.seqs.deltas)  # Vector{UInt32}
+    write(io, Int64.(kct.seqs.regular_cp_idx))
+    # rest
+    write(io, kct.n_cids)
+    write(io, kct.flat_cids)
+    write(io, kct.counts.words)
+    for chunk in kct.counts.bitmap.chunks; write(io, chunk); end
+end
+
+function load(io::IO, ::Val{1.4})
+    K = read(io, Int64)
+    Ab_name_len = read(io, Int64)
+    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    n_kmers = read(io, Int64)
+    n_flat_cids = read(io, Int64)
+    words_len = read(io, Int64)
+    bitmap_len = read(io, Int64)
+    n_samples = read(io, Int64)
+    word_size_b = read(io, Int64)
+    W = _WORD_TYPES[word_size_b]
+    # DeltaArray fields
+    C = Int(read(io, Int64))
+    n_cp = read(io, Int64)
+    n_rci = read(io, Int64)
+    checkpoints = Vector{UInt64}(undef, n_cp); read!(io, checkpoints)
+    deltas = Vector{UInt32}(undef, n_kmers); read!(io, deltas)
+    rci_i64 = Vector{Int64}(undef, n_rci); read!(io, rci_i64)
+    regular_cp_idx = Vector{Int}(rci_i64)
+    # rest
+    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
+    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
+    words = Vector{W}(undef, words_len); read!(io, words)
+    bitmap = BitVector(undef, bitmap_len)
+    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
+
+    seqs = DeltaArray(checkpoints, deltas, regular_cp_idx, C)
+    idx = Ref(0) => fill(0:-1, 4^15)
+    kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
+               PackedArray{UInt32, W}(words, bitmap, words_len),
+               idx, Ref(n_samples), 1.4)
+    compute_index!(kct)
+    return kct
+end
+
+## V1.3 ##
+function Base.write(io::IO, kct::NeoKCT{K, Ab, W, C}, ::Val{1.3}) where {K, Ab<:Alphabet, W<:Unsigned, C}
+    seqs = collect(kct.seqs)   # decode to flat for legacy format
+    Ab_name = String(Ab.name.singletonname)
+    write(io, Int64(K))
+    write(io, Int64(length(Ab_name)));  write(io, codeunits(Ab_name))
+    write(io, Int64(length(seqs)))
+    write(io, Int64(length(kct.flat_cids)))
+    write(io, Int64(length(kct.counts.words)))
+    write(io, Int64(length(kct.counts.bitmap)))
+    write(io, Int64(kct.samples.x))
+    write(io, Int64(sizeof(W)))
+    write(io, seqs)
+    write(io, kct.n_cids)
     write(io, kct.flat_cids)
     write(io, kct.counts.words)
     for chunk in kct.counts.bitmap.chunks; write(io, chunk); end
@@ -52,26 +108,26 @@ function load(io::IO, ::Val{1.3})
     K = read(io, Int64)
     Ab_name_len = read(io, Int64)
     Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
-    n_seqs = read(io, Int64)
+    n_kmers = read(io, Int64)
     n_flat_cids = read(io, Int64)
     words_len = read(io, Int64)
     bitmap_len = read(io, Int64)
     n_samples = read(io, Int64)
-    word_size_bytes = read(io, Int64)
+    word_size_b = read(io, Int64)
+    W = _WORD_TYPES[word_size_b]
 
-    W = _WORD_TYPES[word_size_bytes]
-
-    seqs = Vector{UInt64}(undef, n_seqs); read!(io, seqs)
-    n_cids = Vector{UInt16}(undef, n_seqs); read!(io, n_cids)
+    raw_seqs = Vector{UInt64}(undef, n_kmers); read!(io, raw_seqs)
+    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
     flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
     words = Vector{W}(undef, words_len); read!(io, words)
     bitmap = BitVector(undef, bitmap_len)
     for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
 
+    seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
     idx = Ref(0) => fill(0:-1, 4^15)
     kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
-                 PackedArray{UInt32, W}(words, bitmap, words_len),
-                 idx, Ref(n_samples), 1.3)
+               PackedArray{UInt32, W}(words, bitmap, words_len),
+               idx, Ref(n_samples), 1.4)
     compute_index!(kct)
     return kct
 end
@@ -81,54 +137,27 @@ function load(io::IO, ::Val{1.2})
     K = read(io, Int64)
     Ab_name_len = read(io, Int64)
     Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
-    n_seqs = read(io, Int64)
+    n_kmers = read(io, Int64)
     n_flat_cids = read(io, Int64)
     words_len = read(io, Int64)
     bitmap_len = read(io, Int64)
     n_samples = read(io, Int64)
-    word_size_bytes = read(io, Int64)
+    word_size_b = read(io, Int64)
+    W = _WORD_TYPES[word_size_b]
 
-    W = _WORD_TYPES[word_size_bytes]
-
-    seqs = Vector{UInt64}(undef, n_seqs); read!(io, seqs)
-    offsets_u32 = Vector{UInt32}(undef, n_seqs + 1); read!(io, offsets_u32)
-    n_cids = UInt16.(diff(offsets_u32))  # recover cid counts from offset differences
+    raw_seqs = Vector{UInt64}(undef, n_kmers); read!(io, raw_seqs)
+    offsets_u32 = Vector{UInt32}(undef, n_kmers + 1); read!(io, offsets_u32)
+    n_cids = UInt16.(diff(offsets_u32))
     flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
     words = Vector{W}(undef, words_len); read!(io, words)
     bitmap = BitVector(undef, bitmap_len)
     for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
 
+    seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
     idx = Ref(0) => fill(0:-1, 4^15)
     kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
-                 PackedArray{UInt32, W}(words, bitmap, words_len),
-                 idx, Ref(n_samples), 1.3)
-    compute_index!(kct)
-    return kct
-end
-function load(io::IO, ::Val{1.2})
-    K = read(io, Int64)
-    Ab_name_len = read(io, Int64)
-    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
-    n_seqs = read(io, Int64)
-    n_flat_cids = read(io, Int64)
-    words_len = read(io, Int64)
-    bitmap_len = read(io, Int64)
-    n_samples = read(io, Int64)
-    word_size_bytes = read(io, Int64)
-
-    W = _WORD_TYPES[word_size_bytes]
-
-    seqs = Vector{UInt64}(undef, n_seqs); read!(io, seqs)
-    offsets = Vector{UInt32}(undef, n_seqs + 1); read!(io, offsets)
-    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
-    words = Vector{W}(undef, words_len); read!(io, words)
-    bitmap = BitVector(undef, bitmap_len)
-    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
-
-    idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, W, 1}(seqs, offsets, flat_cids,
-                 PackedArray{UInt32, W}(words, bitmap, words_len),
-                 idx, Ref(n_samples), 1.3)
+               PackedArray{UInt32, W}(words, bitmap, words_len),
+               idx, Ref(n_samples), 1.4)
     compute_index!(kct)
     return kct
 end

@@ -147,13 +147,15 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     benchmark_size = 100_000_000
     n_samples = kct.samples.x
     n_kmers = length(kct.seqs)
-    kmer_seq_bytes = sizeof(UInt64) * length(kct.seqs)
+    kmer_seq_bytes = sizeof(UInt64) * length(kct.seqs.checkpoints) +
+                 sizeof(UInt32) * length(kct.seqs.deltas) +
+                 sizeof(Int) * length(kct.seqs.regular_cp_idx)
     chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
     n_cids_bytes = sizeof(UInt32) * length(kct.n_cids)
     count_words_bytes = Base.summarysize(kct.counts.words)
     bitmap_bytes = Base.summarysize(kct.counts.bitmap)
 
-    k_mers = rand(kct.seqs, benchmark_size)
+    k_mers = rand(kct.seqs.checkpoints, benchmark_size)
     t_start = now()
     @showprogress "Benchmarking Query Speed for $benchmark_size k-mers..." for k_mer in k_mers
         findfirst(kct, k_mer)
