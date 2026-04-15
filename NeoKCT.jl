@@ -35,15 +35,19 @@ NeoKCT{K,Ab,W,C}(seqs, n_cids, flat_cids, counts, idx, samples) where {K,Ab<:Alp
 
 const DEFAULT_CHECKPOINT_INTERVAL = 256
 
-NeoKCT{K,Ab,W}() where {K,Ab<:Alphabet,W<:Unsigned} = NeoKCT{K,Ab,W,1}(
-    DeltaArray(DEFAULT_CHECKPOINT_INTERVAL), UInt16[], UInt32[],
+NeoKCT{K,Ab,W}(;checkpoint_size::Type{<:Unsigned}=UInt64, 
+                delta_size::Type{<:Unsigned}=UInt32,
+                ) where {K,Ab<:Alphabet,W<:Unsigned} = NeoKCT{K,Ab,W,1}(
+    DeltaArray{checkpoint_size, delta_size}(DEFAULT_CHECKPOINT_INTERVAL), UInt16[], UInt32[],
     PackedArray{UInt32,W}(),
     Ref(20) => fill(0:-1, 4^15),
     Ref(1), VERSION)
 
 # Build KCT of 1 sample from a count hashtable from JelloFish
-function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
-    kct = NeoKCT{K, Ab, W}()
+function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32};
+                          checkpoint_size::Type{<:Unsigned}=UInt64, 
+                          delta_size::Type{<:Unsigned}=UInt32,) where {K, Ab<:Alphabet, W<:Unsigned}
+    kct = NeoKCT{K, Ab, W}(checkpoint_size=checkpoint_size, delta_size=delta_size)
     # Accumulate unsorted k-mer bits in a temporary flat vector, then sort and encode
     tmp_seqs = Vector{UInt64}(undef, length(sample_hashtable))
     sizehint!(kct.flat_cids, length(sample_hashtable))
@@ -290,20 +294,16 @@ end
 
 ## KCT Building ##
 
-function build_kct(sample::String, K::Int=30, chunks::Int=500_000;
-                   word_size::DataType=UInt128, collapse::Bool=true)
-    kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(sample, K, chunks))
-    kct = collapse ? collapse!(kct) : kct
-    return kct
-end
-
 function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int=500_000;
-                   word_size::DataType=UInt128, save_at_samples::AbstractVector{Int}=Int[],
+                   word_size::Type{<:Unsigned}=UInt128, checkpoint_size::Type{<:Unsigned}=UInt64,
+                   delta_size::Type{<:Unsigned}=UInt32, save_at_samples::AbstractVector{Int}=Int[],
                    save_path::String="", collapse_every::Int=1, benchmark_every::Int=5,
                    full_pointer_walkthrough::Bool=false)
-    kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(popfirst!(samples), K, chunks))
-    mkpath(save_path * "benchmarks/")
-    for (i, sample) in enumerate(samples)
+    kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(popfirst!(samples), K, chunks),
+                                             checkpoint_size=checkpoint_size,
+                                             delta_size=delta_size)
+    length(samples) != 1 && mkpath(save_path * "benchmarks/")
+    for (i, sample) in enumerate(samples)   
         sample_hashtable = jello_superthreaded_hash(sample, K, chunks)
         push!(kct, sample_hashtable)
         kct = ((i+1) % collapse_every == 0) ? collapse!(kct) : kct

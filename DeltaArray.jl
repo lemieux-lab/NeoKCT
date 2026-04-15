@@ -23,7 +23,7 @@ DeltaArray(checkpoint_interval::Int=256) =
 
 # Build from a sorted Vector
 DeltaArray{C, D}(arr::Vector{C}, checkpoint_interval::Int=256) where {C, D} =
-    DeltaArray(_delta_encode(arr, checkpoint_interval)..., checkpoint_interval)
+    DeltaArray(_delta_encode(arr, checkpoint_interval, D)..., checkpoint_interval)
 
 DeltaArray(arr::Vector{C}, checkpoint_interval::Int=256) where {C} =
     DeltaArray(_delta_encode(arr, checkpoint_interval)..., checkpoint_interval)
@@ -56,9 +56,9 @@ end
 
 # Re-encode in-place from a new sorted flat vector (used after sort/merge).
 function encode!(a::DeltaArray{C, D}, arr::Vector{C}) where {C, D}
-    cp, dl, rci = _delta_encode(arr, a.checkpoint_interval)
+    cp, dl, rci = _delta_encode(arr, a.checkpoint_interval, D)
     resize!(a.checkpoints, length(cp)); copyto!(a.checkpoints, cp)
-    resize!(a.deltas, length(dl));  copyto!(a.deltas, dl)
+    resize!(a.deltas, length(dl)); copyto!(a.deltas, dl)
     resize!(a.regular_cp_idx, length(rci)); copyto!(a.regular_cp_idx, rci)
 end
 
