@@ -79,7 +79,7 @@ function load(io::IO, ::Val{1.4})
     seqs = DeltaArray(checkpoints, deltas, regular_cp_idx, C)
     idx = Ref(0) => fill(0:-1, 4^15)
     kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
-               PackedArray{UInt32, W}(words, bitmap, words_len),
+               PackedArray{UInt32, W}(words, bitmap),
                idx, Ref(n_samples), 1.4)
     compute_index!(kct)
     return kct
@@ -126,7 +126,7 @@ function load(io::IO, ::Val{1.3})
     seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
     idx = Ref(0) => fill(0:-1, 4^15)
     kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
-               PackedArray{UInt32, W}(words, bitmap, words_len),
+               PackedArray{UInt32, W}(words, bitmap),
                idx, Ref(n_samples), 1.4)
     compute_index!(kct)
     return kct
@@ -156,7 +156,7 @@ function load(io::IO, ::Val{1.2})
     seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
     idx = Ref(0) => fill(0:-1, 4^15)
     kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
-               PackedArray{UInt32, W}(words, bitmap, words_len),
+               PackedArray{UInt32, W}(words, bitmap),
                idx, Ref(n_samples), 1.4)
     compute_index!(kct)
     return kct

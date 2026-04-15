@@ -137,6 +137,28 @@ function plot_kmer_cardinality(history::Vector{Any})
     return f
 end
 
+# Plot progress of DeltaArray components for the k-mer sequences
+function plot_deltaarray_growth(history::Vector{Any})
+    printstyled("Plotting DeltaArray component size growth...\n", color=:green)
+    n_kmers_hist = [e["n_kmers"] for e in history]
+    checkpoints_hist = [e["checkpoints_bytes"] for e in history]
+    deltas_hist = [e["deltas_bytes"] for e in history]
+    regular_cp_idx_hist = [e["regular_cp_idx_bytes"] for e in history]
+    f = Figure()
+    ax = Axis(f[1, 1],
+              title = "DeltaArray Component Sizes Over K-mers",
+              xlabel = "K-mer Count",
+              ylabel = "Size (Bytes)")
+    lines!(ax, n_kmers_hist, checkpoints_hist, label = "Checkpoints (checkpoints)", color = :red)
+    scatter!(ax, n_kmers_hist, checkpoints_hist, color = :red)
+    lines!(ax, n_kmers_hist, deltas_hist, label = "Deltas (deltas)", color = :steelblue)
+    scatter!(ax, n_kmers_hist, deltas_hist, color = :steelblue)
+    lines!(ax, n_kmers_hist, regular_cp_idx_hist, label = "Checkpoint Indices (regular_cp_idx)", color = :gray)
+    scatter!(ax, n_kmers_hist, regular_cp_idx_hist, color = :gray)
+    axislegend(ax, position = :lt)
+    return f
+end
+
 # Plot everything on a KCT
 function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_walkthrough::Bool=false) where {K, Ab<:Alphabet}
     mkpath(benchmark_path * "sizes_benchmarks/")
@@ -147,9 +169,10 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     benchmark_size = 100_000_000
     n_samples = kct.samples.x
     n_kmers = length(kct.seqs)
-    kmer_seq_bytes = sizeof(UInt64) * length(kct.seqs.checkpoints) +
-                 sizeof(UInt32) * length(kct.seqs.deltas) +
-                 sizeof(Int) * length(kct.seqs.regular_cp_idx)
+    checkpoints_bytes = sizeof(eltype(kct.seqs.checkpoints)) * length(kct.seqs.checkpoints)
+    deltas_bytes = sizeof(eltype(kct.seqs.deltas)) * length(kct.seqs.deltas)
+    regular_cp_idx_bytes = sizeof(eltype(kct.seqs.regular_cp_idx)) * length(kct.seqs.regular_cp_idx)
+    kmer_seq_bytes = checkpoints_bytes + deltas_bytes + regular_cp_idx_bytes
     chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
     n_cids_bytes = sizeof(UInt32) * length(kct.n_cids)
     count_words_bytes = Base.summarysize(kct.counts.words)
@@ -167,6 +190,10 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
         "samples" => n_samples,
         "timestamp" => string(now()),
         "kmer_seq_bytes" => kmer_seq_bytes,
+        "checkpoints_bytes" => checkpoints_bytes,
+        "deltas_bytes" => deltas_bytes,
+        "regular_cp_idx_bytes" => regular_cp_idx_bytes,
+        "chunk_ids_bytes" => chunk_ids_bytes,
         "chunk_ids_bytes" => chunk_ids_bytes,
         "n_cids_bytes" => n_cids_bytes,
         "count_words_bytes" => count_words_bytes,
@@ -195,6 +222,8 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     CairoMakie.save(benchmark_path * "query_speed_benchmark.svg", f5)
     f6 = plot_kmer_cardinality(history)
     CairoMakie.save(benchmark_path * "kmer_cardinality_benchmark.svg", f6)
+    f7 = plot_deltaarray_growth(history)
+    CairoMakie.save(benchmark_path * "deltaarray_benchmark.svg", f7)
 
     return
 end

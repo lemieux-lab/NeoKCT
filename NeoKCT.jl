@@ -49,9 +49,9 @@ function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:
     sizehint!(kct.flat_cids, length(sample_hashtable))
     sizehint!(kct.n_cids, length(sample_hashtable))
     @showprogress desc="Parsing Hash-Table into KCT..." for (j, (k_bits, count)) in enumerate(sample_hashtable)
-        word_id = push!(kct.counts, UInt64(count))
+        push!(kct.counts, UInt64(count))
         tmp_seqs[j] = k_bits
-        push!(kct.flat_cids, UInt32(word_id))
+        push!(kct.flat_cids, UInt32(lastindex(kct.counts)))
         push!(kct.n_cids, UInt16(1))  # each new k-mer starts with exactly 1 cid
     end
     perm = psortperm(tmp_seqs)
@@ -87,7 +87,7 @@ end
 function assemble_count_vector(kct::NeoKCT{K, Ab, W}, i::Integer) where {K, Ab<:Alphabet, W<:Unsigned}
     lo = 1 + Int64(sum(@view kct.n_cids[1:i-1]))
     cids = @view kct.flat_cids[lo : lo + kct.n_cids[i] - 1]
-    counts = reduce(vcat, [assemble_word(kct.counts, Int(c)) for c in cids])
+    counts = reduce(vcat, [kct.counts[Int(c)] for c in cids])
     n_missing = kct.samples.x - length(counts)
     return n_missing > 0 ? vcat(counts, zeros(W, n_missing)) : counts
 end
@@ -120,8 +120,8 @@ end
 
 function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
     shared_words = find_shared_words(kct)
-    offsets  = _kmer_offsets(kct.n_cids)
-    ext_buf  = Dict{Int, Vector{UInt32}}()
+    offsets = _kmer_offsets(kct.n_cids)
+    ext_buf = Dict{Int, Vector{UInt32}}()
     new_seqs = UInt64[]
     new_cids = Vector{UInt32}[]
 
@@ -185,56 +185,61 @@ function _push_existing_kmer_counts!(kct::NeoKCT{K, Ab, W}, ext_buf::Dict{Int,Ve
                                       offsets::Vector{UInt64}) where {K, Ab<:Alphabet, W<:Unsigned}
     cur_cids = @view kct.flat_cids[offsets[k_pos] : offsets[k_pos+1]-1]
     last_wid = Int(cur_cids[end])
-    total_stored = sum(sum(@view kct.counts.bitmap[word_bitmap_slice(Int(c), W)]) for c in cur_cids)
+    total_stored = sum(length(kct.counts[Int(c)]) for c in cur_cids)
     missing_counts = kct.samples.x - total_stored
     ext = get!(ext_buf, k_pos, UInt32[])
 
     if last_wid in shared_words
         if missing_counts > 0
-            new_wid = push!(kct.counts, W(0))
+            push!(kct.counts, W(0))
+            new_wid = lastindex(kct.counts)
             push!(ext, UInt32(new_wid))
             for _ in 2:missing_counts
-                next_wid = push!(kct.counts, W(0), new_wid)
+                push!(kct.counts, W(0), new_wid)
+                next_wid = lastindex(kct.counts)
                 if next_wid != new_wid
                     push!(ext, UInt32(next_wid)); new_wid = next_wid
                 end
             end
-            word_id = push!(kct.counts, W(count & typemax(W)), new_wid)
+            push!(kct.counts, W(count & typemax(W)), new_wid)
+            word_id = lastindex(kct.counts)
             word_id != new_wid && push!(ext, UInt32(word_id))
         else
-            word_id = push!(kct.counts, W(count & typemax(W)))
-            push!(ext, UInt32(word_id))
+            push!(kct.counts, W(count & typemax(W)))
+            push!(ext, UInt32(lastindex(kct.counts)))
         end
     else
         for _ in 1:missing_counts
-            new_wid = push!(kct.counts, W(0), last_wid)
+            push!(kct.counts, W(0), last_wid)
+            new_wid = lastindex(kct.counts)
             if last_wid != new_wid
                 push!(ext, UInt32(new_wid)); last_wid = new_wid
             end
         end
-        word_id = push!(kct.counts, W(count & typemax(W)), last_wid)
+        push!(kct.counts, W(count & typemax(W)), last_wid)
+        word_id = lastindex(kct.counts)
         last_wid != word_id && push!(ext, UInt32(word_id))
     end
 end
 
 function _push_new_kmer_counts!(counts::PackedArray{UInt32, W}, prev_samples::Int, count::UInt32) where {W<:Unsigned}
-    wid  = new_word!(counts)
+    wid = new_word!(counts)
     chunk_ids = UInt32[wid]
     @inbounds for _ in 1:prev_samples
-        new_wid = push!(counts, W(0), wid)
-        if new_wid != wid
-            push!(chunk_ids, UInt32(new_wid))
-            wid = new_wid
+        push!(counts, W(0), wid)
+        if lastindex(counts) != wid
+            wid = lastindex(counts)
+            push!(chunk_ids, UInt32(wid))
         end
     end
-    new_wid = push!(counts, W(count & typemax(W)), wid)
-    new_wid != wid && push!(chunk_ids, UInt32(new_wid))
+    push!(counts, W(count & typemax(W)), wid)
+    lastindex(counts) != wid && push!(chunk_ids, UInt32(lastindex(counts)))
     return chunk_ids
 end
 
 ## KCT Post-Processing ##
 
-# Uses the O(1)-amortised sequential iterator from DeltaArray — O(n) total.
+# Uses the O(1)-amortised sequential iterator from DeltaArray. O(n) total.
 function compute_index!(kct::NeoKCT{K, Ab}; prefix_size::Int64=4) where {K, Ab<:Alphabet}
     start = 1
     last_key = 0x0000000000000000
@@ -271,15 +276,15 @@ function Base.sort!(kct::NeoKCT)
     encode!(kct.seqs, seqs[perm])
 
     offsets = _kmer_offsets(kct.n_cids)
-    new_flat = UInt32[]; sizehint!(new_flat,   length(kct.flat_cids))
+    new_flat = UInt32[]; sizehint!(new_flat, length(kct.flat_cids))
     new_n_cids = UInt16[]; sizehint!(new_n_cids, length(kct.seqs))
     for i in perm
         lo, hi = offsets[i], offsets[i+1] - 1
         append!(new_flat, @view kct.flat_cids[lo:hi])
         push!(new_n_cids, kct.n_cids[i])
     end
-    resize!(kct.flat_cids, length(new_flat));   copyto!(kct.flat_cids, new_flat)
-    resize!(kct.n_cids, length(new_n_cids)); copyto!(kct.n_cids,    new_n_cids)
+    resize!(kct.flat_cids, length(new_flat)); copyto!(kct.flat_cids, new_flat)
+    resize!(kct.n_cids, length(new_n_cids)); copyto!(kct.n_cids, new_n_cids)
     return kct
 end
 
