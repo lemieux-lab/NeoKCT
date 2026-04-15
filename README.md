@@ -36,13 +36,14 @@ Each sample is processed into a k-mer count hash table, then merged into a singl
  
 ## Key Technical Features
  
-- **Bit-packed count storage** (`PackedArray`): variable-width values packed into fixed-size words, dramatically reducing memory footprint compared to standard arrays.
-- **Compressed Sparse Row (CSR) layout**: k-mer sequences, offset arrays (retrieved by cumulative sum of cids/k-mer), and count word IDs are stored in three flat vectors, minimizing per-entry allocation overhead.
-- **Prefix-indexed binary search**: a 4-symbol prefix index (20-bit for amino acids) partitions the sorted k-mer list into ~160,000 buckets, accelerating lookup.
+- **Bit-packed count storage** (`PackedArray`): variable-width values packed into fixed-size words, dramatically reducing memory footprint compared to standard arrays. Implements `AbstractVector{Vector{T}}`.
+- **Delta-encoded k-mer sequences** (`DeltaArray`): sorted k-mer bit-patterns stored as delta-encoded integers (UInt64 values, UInt32 deltas), roughly halving sequence storage. Periodic checkpoints bound random access to O(checkpoint interval); sequential iteration is O(1) amortized. Overflow deltas are transparently promoted to checkpoints.
+- **Compressed Sparse Row (CSR) layout**: k-mer sequences, per-k-mer CID counts (`n_cids`, reconstructed by cumulative sum), and count word IDs are stored in three flat vectors, minimizing per-entry allocation overhead.
+- **Prefix-indexed binary search**: a 4-symbol prefix index partitions the sorted k-mer list into buckets, accelerating lookup. Within each bucket, `DeltaArray.searchfirst` performs an efficient in-order scan without full decode.
 - **Parallel k-merization**: multi-threaded chunk-based processing of FASTQ files with parallel hash-table merging (`jello_superthreaded_hash`).
 - **Parallel merge-sort**: task-based divide-and-conquer sort used when integrating new samples into the table.
 - **DNA → amino acid translation**: nucleotide k-mers are translated to amino acid k-mers using a custom 5-bit alphabet, enabling peptide-level queries.
-- **Versioned binary serialization**: tables are written/read in a compact binary format (current: v1.3, v1.2 loading still supported with conversion to 1.3 layout) with metadata headers.
+- **Versioned binary serialization**: tables are written/read in a compact binary format (current: v1.4, v1.2 and v1.3 loading supported with in-memory upgrade to v1.4 layout) with metadata headers.
  
 ---
  
@@ -93,7 +94,7 @@ kct = build_kct(
  
 # Serialize / deserialize
 write_kct(kct, "my_table.kct")
-kct = read_kct("my_table.kct")
+kct = load_kct("my_table.kct")
  
 # Index a k-mer (returns Kmer => count_vector across samples)
 i = findfirst(kct, kmer_bits)
@@ -107,10 +108,11 @@ kct[i]
 | File | Description |
 |---|---|
 | `NeoKCT.jl` | Core `NeoKCT` struct, `build_kct`, `push!`, binary search, sort |
-| `PackedArray.jl` | Bit-packed variable-width array and deduplication |
+| `PackedArray.jl` | Bit-packed variable-width array (`AbstractVector`) and deduplication |
+| `DeltaArray.jl` | Delta-encoded sorted integer array (`AbstractVector`) with checkpoints |
 | `JelloFish.jl` | Parallel k-merization and counting from FASTQ |
 | `AAAlphabet.jl` | Custom 5-bit amino acid alphabet for `BioSequences` |
-| `KCTLoader.jl` | Binary serialization / deserialization (v1.3) |
+| `KCTLoader.jl` | Binary serialization / deserialization (v1.4, v1.2/v1.3 loading) |
 | `KCTBenchmarker.jl` | Memory and performance benchmarking with SVG plots |
 | `BioParser.jl` | Unified reader for FASTQ, gzipped FASTQ, and mzid files |
 | `parallel_sort.jl` | Task-based parallel merge-sort |
