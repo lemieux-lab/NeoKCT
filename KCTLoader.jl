@@ -26,7 +26,8 @@ end
 
 ### VERSION DEPENDENT LOADERS ###
 ## V1.4 ##
-function Base.write(io::IO, kct::NeoKCT{K, Ab, W, C}, ::Val{1.4}) where {K, Ab<:Alphabet, W<:Unsigned, C}
+function Base.write(io::IO, kct::NeoKCT{K, Ab, C}, ::Val{1.4}) where {K, Ab<:Alphabet, C}
+    W = eltype(kct.counts.words)
     Ab_name = String(Ab.name.singletonname)
     write(io, Int64(K))
     write(io, Int64(length(Ab_name))); write(io, codeunits(Ab_name))
@@ -78,7 +79,7 @@ function load(io::IO, ::Val{1.4})
 
     seqs = DeltaArray(checkpoints, deltas, regular_cp_idx, C)
     idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
+    kct = NeoKCT{K, Ab, 1}(seqs, n_cids, flat_cids,
                PackedArray{UInt32, W}(words, bitmap),
                idx, Ref(n_samples), 1.4)
     compute_index!(kct)
@@ -86,7 +87,8 @@ function load(io::IO, ::Val{1.4})
 end
 
 ## V1.3 ##
-function Base.write(io::IO, kct::NeoKCT{K, Ab, W, C}, ::Val{1.3}) where {K, Ab<:Alphabet, W<:Unsigned, C}
+function Base.write(io::IO, kct::NeoKCT{K, Ab, C}, ::Val{1.3}) where {K, Ab<:Alphabet, C}
+    W = eltype(kct.counts.words)
     seqs = collect(kct.seqs)   # decode to flat for legacy format
     Ab_name = String(Ab.name.singletonname)
     write(io, Int64(K))
@@ -125,7 +127,7 @@ function load(io::IO, ::Val{1.3})
 
     seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
     idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
+    kct = NeoKCT{K, Ab, 1}(seqs, n_cids, flat_cids,
                PackedArray{UInt32, W}(words, bitmap),
                idx, Ref(n_samples), 1.4)
     compute_index!(kct)
@@ -155,7 +157,7 @@ function load(io::IO, ::Val{1.2})
 
     seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
     idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, W, 1}(seqs, n_cids, flat_cids,
+    kct = NeoKCT{K, Ab, 1}(seqs, n_cids, flat_cids,
                PackedArray{UInt32, W}(words, bitmap),
                idx, Ref(n_samples), 1.4)
     compute_index!(kct)

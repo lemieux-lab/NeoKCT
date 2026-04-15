@@ -140,21 +140,22 @@ end
 # Plot progress of DeltaArray components for the k-mer sequences
 function plot_deltaarray_growth(history::Vector{Any})
     printstyled("Plotting DeltaArray component size growth...\n", color=:green)
-    n_kmers_hist = [e["n_kmers"] for e in history]
+    all_samples = [e["samples"] for e in history]
     checkpoints_hist = [e["checkpoints_bytes"] for e in history]
     deltas_hist = [e["deltas_bytes"] for e in history]
     regular_cp_idx_hist = [e["regular_cp_idx_bytes"] for e in history]
     f = Figure()
     ax = Axis(f[1, 1],
-              title = "DeltaArray Component Sizes Over K-mers",
+              title = "DeltaArray Component Sizes Over Samples",
+              subtitle = "Deltas directly proportional to k-mers (see cardinality)",
               xlabel = "K-mer Count",
               ylabel = "Size (Bytes)")
-    lines!(ax, n_kmers_hist, checkpoints_hist, label = "Checkpoints (checkpoints)", color = :red)
-    scatter!(ax, n_kmers_hist, checkpoints_hist, color = :red)
-    lines!(ax, n_kmers_hist, deltas_hist, label = "Deltas (deltas)", color = :steelblue)
-    scatter!(ax, n_kmers_hist, deltas_hist, color = :steelblue)
-    lines!(ax, n_kmers_hist, regular_cp_idx_hist, label = "Checkpoint Indices (regular_cp_idx)", color = :gray)
-    scatter!(ax, n_kmers_hist, regular_cp_idx_hist, color = :gray)
+    lines!(ax, all_samples, checkpoints_hist, label = "Checkpoints (checkpoints)", color = :red)
+    scatter!(ax, all_samples, checkpoints_hist, color = :red)
+    lines!(ax, all_samples, deltas_hist, label = "Deltas (deltas)", color = :steelblue)
+    scatter!(ax, all_samples, deltas_hist, color = :steelblue)
+    lines!(ax, all_samples, regular_cp_idx_hist, label = "Checkpoint Indices (regular_cp_idx)", color = :gray)
+    scatter!(ax, all_samples, regular_cp_idx_hist, color = :gray)
     axislegend(ax, position = :lt)
     return f
 end

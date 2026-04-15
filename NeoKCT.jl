@@ -19,35 +19,37 @@ global const VERSION = 1.4
 
 ## KCT Definition ##
 
-struct NeoKCT{K, Ab<:Alphabet, W<:Unsigned, C}
+struct NeoKCT{K, Ab<:Alphabet, C}
     seqs::DeltaArray
     n_cids::Vector{UInt16}  # number of cids per k-mer (cumsum to reconstruct offset vector)
     flat_cids::Vector{UInt32}
-    counts::PackedArray{UInt32, W}
+    counts::PackedArray{UInt32}
     idx::Pair{Base.RefValue{Int64}, Vector{UnitRange{Int64}}}
     samples::Base.RefValue{Int64}
     version::Float64
 end
 
 # Convenience constructors
-NeoKCT{K,Ab,W,C}(seqs, n_cids, flat_cids, counts, idx, samples) where {K,Ab<:Alphabet,W<:Unsigned,C} =
-    NeoKCT{K,Ab,W,C}(seqs, n_cids, flat_cids, counts, idx, samples, VERSION)
+NeoKCT{K,Ab,C}(seqs, n_cids, flat_cids, counts, idx, samples) where {K,Ab<:Alphabet,C} =
+    NeoKCT{K,Ab,C}(seqs, n_cids, flat_cids, counts, idx, samples, VERSION)
 
 const DEFAULT_CHECKPOINT_INTERVAL = 256
 
-NeoKCT{K,Ab,W}(;checkpoint_size::Type{<:Unsigned}=UInt64, 
-                delta_size::Type{<:Unsigned}=UInt32,
-                ) where {K,Ab<:Alphabet,W<:Unsigned} = NeoKCT{K,Ab,W,1}(
+NeoKCT{K,Ab}(;checkpoint_size::Type{<:Unsigned}=UInt64,
+              delta_size::Type{<:Unsigned}=UInt32,
+              word_size::Type{<:Unsigned}=UInt128,
+              ) where {K,Ab<:Alphabet} = NeoKCT{K,Ab,1}(
     DeltaArray{checkpoint_size, delta_size}(DEFAULT_CHECKPOINT_INTERVAL), UInt16[], UInt32[],
-    PackedArray{UInt32,W}(),
+    PackedArray{UInt32,word_size}(),
     Ref(20) => fill(0:-1, 4^15),
     Ref(1), VERSION)
 
 # Build KCT of 1 sample from a count hashtable from JelloFish
-function NeoKCT{K, Ab, W}(sample_hashtable::Dict{UInt64, UInt32};
-                          checkpoint_size::Type{<:Unsigned}=UInt64, 
-                          delta_size::Type{<:Unsigned}=UInt32,) where {K, Ab<:Alphabet, W<:Unsigned}
-    kct = NeoKCT{K, Ab, W}(checkpoint_size=checkpoint_size, delta_size=delta_size)
+function NeoKCT{K, Ab}(sample_hashtable::Dict{UInt64, UInt32};
+                       checkpoint_size::Type{<:Unsigned}=UInt64,
+                       delta_size::Type{<:Unsigned}=UInt32,
+                       word_size::Type{<:Unsigned}=UInt128) where {K, Ab<:Alphabet}
+    kct = NeoKCT{K, Ab}(checkpoint_size=checkpoint_size, delta_size=delta_size, word_size=word_size)
     # Accumulate unsorted k-mer bits in a temporary flat vector, then sort and encode
     tmp_seqs = Vector{UInt64}(undef, length(sample_hashtable))
     sizehint!(kct.flat_cids, length(sample_hashtable))
@@ -74,26 +76,26 @@ end
 
 idx_prefix_size(kct::NeoKCT) = kct.idx[1].x
 
-function Base.getindex(kct::NeoKCT{K, Ab, W}, i::Integer) where {K, Ab<:Alphabet, W<:Unsigned}
+function Base.getindex(kct::NeoKCT{K, Ab}, i::Integer) where {K, Ab<:Alphabet}
     seq = Kmer{Ab, K, 1}(Kmers.unsafe, (kct.seqs[i],))
     return seq => assemble_count_vector(kct, i)
 end
 
-function Base.getindex(kct::NeoKCT{K, Ab, W}, i::UnitRange) where {K, Ab<:Alphabet, W<:Unsigned}
+function Base.getindex(kct::NeoKCT{K, Ab}, i::UnitRange) where {K, Ab<:Alphabet}
     return Tuple(kct[j] for j in i)
 end
 
-function Base.getindex(kct::NeoKCT{K, Ab, W}, i::V) where {K, Ab<:Alphabet, W<:Unsigned, V<:AbstractVector}
+function Base.getindex(kct::NeoKCT{K, Ab}, i::V) where {K, Ab<:Alphabet, V<:AbstractVector}
     return Tuple(kct[j] for j in i)
 end
 
 # Recover meaning of words tied to a k-mer to recover its full count vector
-function assemble_count_vector(kct::NeoKCT{K, Ab, W}, i::Integer) where {K, Ab<:Alphabet, W<:Unsigned}
+function assemble_count_vector(kct::NeoKCT{K, Ab}, i::Integer) where {K, Ab<:Alphabet}
     lo = 1 + Int64(sum(@view kct.n_cids[1:i-1]))
     cids = @view kct.flat_cids[lo : lo + kct.n_cids[i] - 1]
     counts = reduce(vcat, [kct.counts[Int(c)] for c in cids])
     n_missing = kct.samples.x - length(counts)
-    return n_missing > 0 ? vcat(counts, zeros(W, n_missing)) : counts
+    return n_missing > 0 ? vcat(counts, zeros(eltype(kct.counts.words), n_missing)) : counts
 end
 
 # Search for a k-mer using the prefix index to narrow the range, then
@@ -122,7 +124,7 @@ end
 
 ## KCT Pushing Sample ##
 
-function Base.push!(kct::NeoKCT{K, Ab, W}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, W<:Unsigned}
+function Base.push!(kct::NeoKCT{K, Ab}, sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet}
     shared_words = find_shared_words(kct)
     offsets = _kmer_offsets(kct.n_cids)
     ext_buf = Dict{Int, Vector{UInt32}}()
@@ -184,9 +186,10 @@ function _kmer_offsets(n_cids::Vector{UInt16})::Vector{UInt64}
     return offsets
 end
 
-function _push_existing_kmer_counts!(kct::NeoKCT{K, Ab, W}, ext_buf::Dict{Int,Vector{UInt32}},
+function _push_existing_kmer_counts!(kct::NeoKCT{K, Ab}, ext_buf::Dict{Int,Vector{UInt32}},
                                       k_pos::Int, shared_words::Set{UInt32}, count::UInt32,
-                                      offsets::Vector{UInt64}) where {K, Ab<:Alphabet, W<:Unsigned}
+                                      offsets::Vector{UInt64}) where {K, Ab<:Alphabet}
+    W = eltype(kct.counts.words)
     cur_cids = @view kct.flat_cids[offsets[k_pos] : offsets[k_pos+1]-1]
     last_wid = Int(cur_cids[end])
     total_stored = sum(length(kct.counts[Int(c)]) for c in cur_cids)
@@ -263,14 +266,14 @@ function compute_index!(kct::NeoKCT{K, Ab}; prefix_size::Int64=4) where {K, Ab<:
     return
 end
 
-function collapse!(kct::NeoKCT{K, Ab, W, C}) where {K, Ab<:Alphabet, W<:Unsigned, C}
+function collapse!(kct::NeoKCT{K, Ab, C}) where {K, Ab<:Alphabet, C}
     deduped, perms, global_perms = permdedup(kct.counts)
     new_flat = similar(kct.flat_cids)
     @threads for i in eachindex(kct.flat_cids)
         new_flat[i] = UInt32(global_perms[kct.flat_cids[i]])
     end
     printstyled("Collapse done\n", color=:green)
-    return NeoKCT{K, Ab, W, C}(kct.seqs, kct.n_cids, new_flat, deduped, kct.idx, kct.samples)
+    return NeoKCT{K, Ab, C}(kct.seqs, kct.n_cids, new_flat, deduped, kct.idx, kct.samples)
 end
 
 function Base.sort!(kct::NeoKCT)
@@ -299,9 +302,10 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int=500_0
                    delta_size::Type{<:Unsigned}=UInt32, save_at_samples::AbstractVector{Int}=Int[],
                    save_path::String="", collapse_every::Int=1, benchmark_every::Int=5,
                    full_pointer_walkthrough::Bool=false)
-    kct = NeoKCT{K÷3, AAAlphabet, word_size}(jello_superthreaded_hash(popfirst!(samples), K, chunks),
-                                             checkpoint_size=checkpoint_size,
-                                             delta_size=delta_size)
+    kct = NeoKCT{K÷3, AAAlphabet}(jello_superthreaded_hash(popfirst!(samples), K, chunks),
+                                  checkpoint_size=checkpoint_size,
+                                  delta_size=delta_size,
+                                  word_size=word_size)
     length(samples) != 1 && mkpath(save_path * "benchmarks/")
     for (i, sample) in enumerate(samples)   
         sample_hashtable = jello_superthreaded_hash(sample, K, chunks)
