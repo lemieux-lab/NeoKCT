@@ -49,7 +49,9 @@ function NeoKCT{K, Ab}(sample_hashtable::Dict{UInt64, UInt32};
                        checkpoint_size::Type{<:Unsigned}=UInt64,
                        delta_size::Type{<:Unsigned}=UInt32,
                        word_size::Type{<:Unsigned}=UInt128) where {K, Ab<:Alphabet}
+    
     kct = NeoKCT{K, Ab}(checkpoint_size=checkpoint_size, delta_size=delta_size, word_size=word_size)
+    
     # Accumulate unsorted k-mer bits in a temporary flat vector, then sort and encode
     tmp_seqs = Vector{UInt64}(undef, length(sample_hashtable))
     sizehint!(kct.flat_cids, length(sample_hashtable))
@@ -60,6 +62,7 @@ function NeoKCT{K, Ab}(sample_hashtable::Dict{UInt64, UInt32};
         push!(kct.flat_cids, UInt32(lastindex(kct.counts)))
         push!(kct.n_cids, UInt16(1))  # each new k-mer starts with exactly 1 cid
     end
+    
     perm = psortperm(tmp_seqs)
     new_flat = similar(kct.flat_cids); new_n_cids = similar(kct.n_cids)
     for (j, i) in enumerate(perm)
@@ -69,6 +72,7 @@ function NeoKCT{K, Ab}(sample_hashtable::Dict{UInt64, UInt32};
     copyto!(kct.flat_cids, new_flat); copyto!(kct.n_cids, new_n_cids)
     encode!(kct.seqs, tmp_seqs[perm])
     compute_index!(kct)
+    
     return kct
 end
 
@@ -250,14 +254,14 @@ end
 function compute_index!(kct::NeoKCT{K, Ab}; prefix_size::Int64=4) where {K, Ab<:Alphabet}
     start = 1
     last_key = 0x0000000000000000
-    prefix_shift = prefix_size * bits_per_symbol(Ab())
     n = length(kct.seqs)
+    prefix_shift = n - (prefix_size * bits_per_symbol(Ab()))
 
     @showprogress "Computing Binary Search Index..." for (i, val) in enumerate(kct.seqs)
         key = val >> prefix_shift
         if key > last_key
             kct.idx[2][last_key+1] = start:i
-            start    = i
+            start = i
             last_key = key
         end
     end

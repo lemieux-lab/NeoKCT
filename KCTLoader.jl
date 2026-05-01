@@ -70,6 +70,7 @@ function load(io::IO, ::Val{1.4})
     deltas = Vector{UInt32}(undef, n_kmers); read!(io, deltas)
     rci_i64 = Vector{Int64}(undef, n_rci); read!(io, rci_i64)
     regular_cp_idx = Vector{Int}(rci_i64)
+    regular_cp_idx = UInt64.(regular_cp_idx)  # TODO: Fix Int → Uint Read/Write (now UInt for regular_cp_index)
     # rest
     n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
     flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)

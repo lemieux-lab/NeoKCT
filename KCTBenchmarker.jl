@@ -175,7 +175,7 @@ function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_
     regular_cp_idx_bytes = sizeof(eltype(kct.seqs.regular_cp_idx)) * length(kct.seqs.regular_cp_idx)
     kmer_seq_bytes = checkpoints_bytes + deltas_bytes + regular_cp_idx_bytes
     chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
-    n_cids_bytes = sizeof(UInt32) * length(kct.n_cids)
+    n_cids_bytes = sizeof(UInt16) * length(kct.n_cids)
     count_words_bytes = Base.summarysize(kct.counts.words)
     bitmap_bytes = Base.summarysize(kct.counts.bitmap)
 

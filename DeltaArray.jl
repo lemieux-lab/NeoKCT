@@ -1,7 +1,7 @@
 include("parallel_sort.jl")
 
 """
-    struct DeltaArrayPackedArray{C, D} checkpoints::Vector{C} deltas::Vector{D} regular_cp_idx::Vector{UInt64} checkpoint_interval::Int end -> Return type
+    struct DeltaArray{C, D} checkpoints::Vector{C} deltas::Vector{D} regular_cp_idx::Vector{UInt64} checkpoint_interval::Int end -> Return type
 
 A delta-encoded array of C, with deltas kept in type D. Only useful if sizeof(D) < sizeof(C).
 Checkpoints reduce search time and are found at "checkpoint_interval". Stored as 0s on deltas.
@@ -118,12 +118,12 @@ function searchfirst(a::DeltaArray{C}, target::C, lo::Int, hi::Int)::Int where {
                 cp += 1
                 v = a.checkpoints[cp]
             else
-                v  += a.deltas[j]
+                v += a.deltas[j]
             end
         end
         j < lo && continue
         v == target && return j
-        v >  target && return 0
+        v > target && return 0
     end
     return 0
 end
