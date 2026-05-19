@@ -14,6 +14,13 @@ function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
     end
 end
 
+function write_kct(rich::RichKCT{K, Ab}, path::String) where {K, Ab}
+    open(path, "w") do io
+        write(io, rich.version)
+        write(io, rich, Val(rich.version))
+    end
+end
+
 const _WORD_TYPES = Dict{Int64, DataType}(
     1 => UInt8, 2 => UInt16, 4 => UInt32, 8 => UInt64, 16 => UInt128
 )
@@ -25,6 +32,36 @@ function get_version(path::String)
 end
 
 ### VERSION DEPENDENT LOADERS ###
+## V2.0 — RichKCT (NeoKCT v1.4 body + BiotypLayer) ##
+function Base.write(io::IO, rich::RichKCT{K, Ab, C}, ::Val{2.0}) where {K, Ab<:Alphabet, C}
+    write(io, rich.kct, Val(1.4))  # NeoKCT body, no version prefix
+    write(io, Int64(length(rich.biotypes.biotype_names)))
+    for name in rich.biotypes.biotype_names
+        write(io, Int64(length(name))); write(io, codeunits(name))
+    end
+    write(io, Int64(length(rich.biotypes.pool)))
+    write(io, rich.biotypes.pool)
+    write(io, rich.biotypes.ids)
+end
+
+function load(io::IO, ::Val{2.0})
+    kct = load(io, Val(1.4))
+    n_names = read(io, Int64)
+    names = Vector{String}(undef, n_names)
+    for i in 1:n_names
+        len = read(io, Int64)
+        names[i] = String([read(io, UInt8) for _ in 1:len])
+    end
+    pool_len = read(io, Int64)
+    pool = Vector{UInt64}(undef, pool_len); read!(io, pool)
+    ids = Vector{UInt16}(undef, length(kct.seqs)); read!(io, ids)
+    return _wrap_rich(kct, BiotypLayer(ids, pool, names))
+end
+
+# Dispatch helper to extract {K,Ab,C} from the loaded NeoKCT.
+_wrap_rich(kct::NeoKCT{K,Ab,C}, biotypes::BiotypLayer) where {K,Ab,C} =
+    RichKCT{K,Ab,C}(kct, biotypes)
+
 ## V1.4 ##
 function Base.write(io::IO, kct::NeoKCT{K, Ab, C}, ::Val{1.4}) where {K, Ab<:Alphabet, C}
     W = eltype(kct.counts.words)

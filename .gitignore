@@ -1,2 +1,4 @@
 make_kcts.jl
+build_kct_tcga.sh
+incremental_kct_step.jl
 benchmarks/

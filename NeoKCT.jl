@@ -10,16 +10,21 @@ using ProgressMeter
 using Base.Threads
 using Dates
 
-include("parallel_sort.jl")
+# KCT Components
 include("PackedArray.jl")
 include("DeltaArray.jl")
-include("JelloFish.jl")
 
-global const VERSION = 1.4
+# Misc
+include("parallel_sort.jl")
+include("JelloFish.jl")
 
 ## KCT Definition ##
 
-struct NeoKCT{K, Ab<:Alphabet, C}
+abstract type AbstractKCT{K, Ab} end
+
+global const VERSION = 1.4
+
+struct NeoKCT{K, Ab<:Alphabet, C} <: AbstractKCT{K, Ab}
     seqs::DeltaArray
     n_cids::Vector{UInt16}  # number of cids per k-mer (cumsum to reconstruct offset vector)
     flat_cids::Vector{UInt32}
@@ -76,6 +81,12 @@ function NeoKCT{K, Ab}(sample_hashtable::Dict{UInt64, UInt32};
     return kct
 end
 
+## RichKCT ##
+include("BiotypLayer.jl")
+include("GenomicIndex.jl")
+include("RichKCT.jl")
+
+
 ## KCT Reading ##
 
 idx_prefix_size(kct::NeoKCT) = kct.idx[1].x
@@ -106,7 +117,7 @@ end
 # DeltaArray.searchfirst for an efficient in-order scan within that range.
 function Base.findfirst(kct::NeoKCT{K, Ab}, key::Kmer{Ab, K}) where {K, Ab<:Alphabet}
     key_bits = key.data[1]
-    idx_key  = key_bits >> (idx_prefix_size(kct) * bits_per_symbol(Ab())) + 1
+    idx_key  = (key_bits >> (idx_prefix_size(kct) * bits_per_symbol(Ab()))) + 1
     r = kct.idx[2][idx_key]
     isempty(r) && return 0
     return searchfirst(kct.seqs, key_bits, r.start, r.stop)
@@ -255,7 +266,7 @@ function compute_index!(kct::NeoKCT{K, Ab}; prefix_size::Int64=4) where {K, Ab<:
     start = 1
     last_key = 0x0000000000000000
     n = length(kct.seqs)
-    prefix_shift = n - (prefix_size * bits_per_symbol(Ab()))
+    prefix_shift = prefix_size * bits_per_symbol(Ab())
 
     @showprogress "Computing Binary Search Index..." for (i, val) in enumerate(kct.seqs)
         key = val >> prefix_shift
