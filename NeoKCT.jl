@@ -84,8 +84,8 @@ end
 ## RichKCT ##
 include("BiotypLayer.jl")
 include("GenomicIndex.jl")
+include("GenomicIndexBuilder.jl")
 include("RichKCT.jl")
-
 
 ## KCT Reading ##
 
