@@ -49,7 +49,7 @@ Ensembl transcript FASTA + GTF / GFF3
  
 Each sample is processed into a k-mer count hash table, then merged into a single `NeoKCT` data structure that grows incrementally. The table can be periodically collapsed (deduplication of count words) and saved to disk in a versioned binary format.
 
-![](Figures/Project_Figures_2.svg)
+<img src="Figures/Project_Figures_2.svg" style="background-color: white; padding: 8px;">
  
 ---
  
