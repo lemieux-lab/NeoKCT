@@ -24,7 +24,8 @@ function Base.iterate(seqfile::F, state=nothing) where {F<:Fq}
     eof(seqfile.iterable) && return nothing
     readline(seqfile.iterable)
     seq = strip(readline(seqfile.iterable))
-    readline(seqfile.iterable)
+    sep = readline(seqfile.iterable)
+    startswith(sep, '+') || error("FASTQ parser desync: expected '+' separator, got $(repr(sep)); sequence was $(repr(seq))")
     readline(seqfile.iterable)
     return seq, state
 end

@@ -73,8 +73,9 @@ function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UI
         push!(current_chunk, seq)
         i += 1
         if i % chunking == 0
-            to_process = current_chunk
-            push!(counting_tasks, @spawn count_kmers(to_process, K, merge_queue,  verbose=true))
+            let chunk = current_chunk
+                push!(counting_tasks, @spawn count_kmers(chunk, K, merge_queue, verbose=true))
+            end
             current_chunk = String[]
             sizehint!(current_chunk, chunking)
 

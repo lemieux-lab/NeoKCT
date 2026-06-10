@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 900 560" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;">
+    <g id="concept-header">
+        <path d="M12,14L888,14C891.3,14 894,16.7 894,20L894,68C894,71.3 891.3,74 888,74L12,74C8.7,74 6,71.3 6,68L6,20C6,16.7 8.7,14 12,14Z" style="fill:rgb(248,244,255);stroke:rgb(153,119,204);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,450,36)">
+            <text x="-97.351px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:12px;fill:rgb(102,68,170);">Delta-Encoded Sorted K-mer Lists</text>
+        </g>
+        <g transform="matrix(1,0,0,1,450,54)">
+            <g>
+                <text x="-330.588px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(153,119,204);">Sorted k-mers are stored as UInt64 checkpoints + UInt32 deltas</text>
+                <g transform="matrix(10,0,0,10,330.588,0)">
+                </g>
+                <text x="-42.947px" y="0px" style="font-family:'Arial-ItalicMT', 'Arial', sans-serif;font-style:italic;font-size:10px;fill:rgb(153,119,204);">(lexicographic adjacency means deltas are small, roughly halving sequence storage)</text>
+            </g>
+        </g>
+        <g transform="matrix(1,0,0,1,450,68)">
+            <g transform="matrix(10,0,0,10,-229.578,0)">
+            </g>
+            <g transform="matrix(10,0,0,10,-226.799,0)">
+            </g>
+            <text x="-251.248px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(153,119,204);">Overﬂow deltas (Δ<tspan x="-170.095px -167.317px " y="0px 0px "> &gt;</tspan> 2³²−1) are transparently promoted to checkpoints, bounding checkpoint interval automatically</text>
+        </g>
+    </g>
+    <g id="table-headers">
+        <rect x="12" y="80" width="876" height="26" style="fill:rgb(232,238,255);"/>
+        <g transform="matrix(1,0,0,1,42,98)">
+            <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">#</text>
+        </g>
+        <g transform="matrix(1,0,0,1,170,98)">
+            <text x="-32.401px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">stored value</text>
+        </g>
+        <g transform="matrix(1,0,0,1,400,98)">
+            <g transform="matrix(11,0,0,11,-17.4238,0)">
+            </g>
+            <g transform="matrix(11,0,0,11,-13.7607,0)">
+            </g>
+            <text x="-111.542px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">k-mer bit-pattern (ﬁrst 32 of 64 bits shown)</text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,98)">
+            <text x="-18.114px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">delta <tspan x="10.208px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,830,98)">
+            <text x="-11.309px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">type</text>
+        </g>
+        <g transform="matrix(1,0,0,0.742222,0,20.6222)">
+            <path d="M78,80L78,530" style="fill:none;stroke:rgb(204,213,238);stroke-width:1px;"/>
+        </g>
+        <g transform="matrix(1,0,0,0.742222,0,20.6222)">
+            <path d="M258,80L258,530" style="fill:none;stroke:rgb(204,213,238);stroke-width:1px;"/>
+        </g>
+        <g transform="matrix(1,0,0,0.742222,0,20.6222)">
+            <path d="M652,80L652,530" style="fill:none;stroke:rgb(204,213,238);stroke-width:1px;"/>
+        </g>
+        <g transform="matrix(1,0,0,0.742222,0,20.6222)">
+            <path d="M788,80L788,530" style="fill:none;stroke:rgb(204,213,238);stroke-width:1px;"/>
+        </g>
+        <g transform="matrix(1,0,0,0.742222,0,20.6222)">
+            <rect x="12" y="80" width="876" height="450" style="fill:none;stroke:rgb(204,213,238);stroke-width:1px;"/>
+        </g>
+    </g>
+    <g id="row-0-checkpoint">
+        <rect x="12" y="106" width="876" height="46" style="fill:rgb(255,248,230);"/>
+        <g transform="matrix(1,0,0,1,42,133)">
+            <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,127)">
+            <text x="0px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:9.5px;fill:rgb(160,100,10);">UInt64</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,143)">
+            <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(140,80,10);">0x00042A8C…</text>
+        </g>
+        <path d="M262,110L642,110C643.1,110 644,110.9 644,112L644,148C644,149.1 643.1,150 642,150L262,150C260.9,150 260,149.1 260,148L260,112C260,110.9 260.9,110 262,110Z" style="fill:rgb(255,240,200);stroke:rgb(200,150,40);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,452,126)">
+            <text x="-120.957px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(120,70,10);">0000 0000 0000 0100  0010 1010 1000 1100</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,142)">
+            <g transform="matrix(9,0,0,9,33.7698,0)">
+            </g>
+            <g transform="matrix(9,0,0,9,36.2703,0)">
+            </g>
+            <text x="-92.292px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(160,110,40);">↑ full 64-bit pattern stored (only ﬁrst 32 shown)</text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,133)">
+            <text x="-5.5px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(170,170,170);">—</text>
+        </g>
+        <g transform="matrix(1,0,0,1.36651,0,-46.9351)">
+            <path d="M796,116L878,116C879.1,116 880,116.9 880,118L880,140C880,141.1 879.1,142 878,142L796,142C794.9,142 794,141.1 794,140L794,118C794,116.9 794.9,116 796,116Z" style="fill:rgb(255,235,180);stroke:rgb(200,150,40);stroke-width:1.5px;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,837,131)">
+            <text x="-33.057px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:10px;fill:rgb(140,80,10);">CHECKPOINT</text>
+        </g>
+    </g>
+    <g id="row-1-delta">
+        <rect x="12" y="152" width="876" height="46" style="fill:rgb(248,248,248);"/>
+        <g transform="matrix(1,0,0,1,42,179)">
+            <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">1</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,173)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(68,102,187);">UInt32 <tspan x="30.105px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,189)">
+            <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(34,68,170);">+ 0x00000003</text>
+        </g>
+        <path d="M262,156L642,156C643.1,156 644,156.9 644,158L644,194C644,195.1 643.1,196 642,196L262,196C260.9,196 260,195.1 260,194L260,158C260,156.9 260.9,156 262,156Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,452,172)">
+            <text x="-120.957px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(68,68,102);">0000 0000 0000 0100  0010 1010 1000 1111</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,188)">
+            <text x="-71.416px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(136,153,204);">reconstructed at read time: prev + <tspan x="65.404px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,179)">
+            <text x="-6.048px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(34,68,170);">+3</text>
+        </g>
+        <path d="M800,162L874,162C875.1,162 876,162.9 876,164L876,186C876,187.1 875.1,188 874,188L800,188C798.9,188 798,187.1 798,186L798,164C798,162.9 798.9,162 800,162Z" style="fill:rgb(232,240,255);stroke:rgb(68,102,187);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,837,179)">
+            <text x="-10.842px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(34,68,170);">delta</text>
+        </g>
+    </g>
+    <g id="row-2-delta">
+        <rect x="12" y="198" width="876" height="46" style="fill:white;"/>
+        <g transform="matrix(1,0,0,1,42,225)">
+            <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">2</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,219)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(68,102,187);">UInt32 <tspan x="30.105px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,235)">
+            <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(34,68,170);">+ 0x00000002</text>
+        </g>
+        <path d="M262,202L642,202C643.1,202 644,202.9 644,204L644,240C644,241.1 643.1,242 642,242L262,242C260.9,242 260,241.1 260,240L260,204C260,202.9 260.9,202 262,202Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,452,218)">
+            <text x="-120.957px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(68,68,102);">0000 0000 0000 0100  0010 1010 1001 0001</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,234)">
+            <text x="-71.416px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(136,153,204);">reconstructed at read time: prev + <tspan x="65.404px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,225)">
+            <text x="-6.048px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(34,68,170);">+2</text>
+        </g>
+        <path d="M800,208L874,208C875.1,208 876,208.9 876,210L876,232C876,233.1 875.1,234 874,234L800,234C798.9,234 798,233.1 798,232L798,210C798,208.9 798.9,208 800,208Z" style="fill:rgb(232,240,255);stroke:rgb(68,102,187);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,837,225)">
+            <text x="-10.842px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(34,68,170);">delta</text>
+        </g>
+    </g>
+    <g id="row-3-delta">
+        <rect x="12" y="244" width="876" height="46" style="fill:rgb(248,248,248);"/>
+        <g transform="matrix(1,0,0,1,42,271)">
+            <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">3</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,265)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(68,102,187);">UInt32 <tspan x="30.105px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,281)">
+            <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(34,68,170);">+ 0x00000007</text>
+        </g>
+        <path d="M262,248L642,248C643.1,248 644,248.9 644,250L644,286C644,287.1 643.1,288 642,288L262,288C260.9,288 260,287.1 260,286L260,250C260,248.9 260.9,248 262,248Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,452,264)">
+            <text x="-120.957px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(68,68,102);">0000 0000 0000 0100  0010 1010 1001 1000</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,280)">
+            <text x="-71.416px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(136,153,204);">reconstructed at read time: prev + <tspan x="65.404px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,271)">
+            <text x="-6.048px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(34,68,170);">+7</text>
+        </g>
+        <path d="M800,254L874,254C875.1,254 876,254.9 876,256L876,278C876,279.1 875.1,280 874,280L800,280C798.9,280 798,279.1 798,278L798,256C798,254.9 798.9,254 800,254Z" style="fill:rgb(232,240,255);stroke:rgb(68,102,187);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,837,271)">
+            <text x="-10.842px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(34,68,170);">delta</text>
+        </g>
+    </g>
+    <g id="row-4-overflow">
+        <rect x="12" y="290" width="876" height="46" style="fill:rgb(255,248,230);"/>
+        <g transform="matrix(1,0,0,1,42,317)">
+            <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">4</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,311)">
+            <text x="0px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:9.5px;fill:rgb(160,100,10);">UInt64</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,325)">
+            <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(140,80,10);">0x000B2F40…</text>
+        </g>
+        <g transform="matrix(1,0,0,1,77.0018,334.211)">
+            <g transform="matrix(8.5,0,0,8.5,67.5642,0)">
+            </g>
+            <g transform="matrix(8.5,0,0,8.5,69.9258,0)">
+            </g>
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8.5px;fill:rgb(180,120,40);">(Δ<tspan x="8.039px 10.401px " y="0px 0px "> &gt;</tspan> 2³²−1 → overﬂow)</text>
+        </g>
+        <path d="M262,294L642,294C643.1,294 644,294.9 644,296L644,332C644,333.1 643.1,334 642,334L262,334C260.9,334 260,333.1 260,332L260,296C260,294.9 260.9,294 262,294Z" style="fill:rgb(255,240,200);stroke:rgb(200,150,40);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,452,310)">
+            <text x="-120.957px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(120,70,10);">0000 1011 0010 1111  0100 0000 0000 0000</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,326)">
+            <g transform="matrix(9,0,0,9,101.059,0)">
+            </g>
+            <text x="-101.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(180,120,40);">gap too large for UInt32 → promoted to checkpoint</text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,317)">
+            <g transform="matrix(11,0,0,11,3.02393,0)">
+            </g>
+            <g transform="matrix(11,0,0,11,6.04785,0)">
+            </g>
+            <text x="-21.167px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(204,68,68);">overﬂow</text>
+        </g>
+        <path d="M796,300L878,300C879.1,300 880,300.9 880,302L880,332C880,333.1 879.1,334 878,334L796,334C794.9,334 794,333.1 794,332L794,302C794,300.9 794.9,300 796,300Z" style="fill:rgb(255,235,180);stroke:rgb(200,150,40);stroke-width:1.5px;"/>
+        <g transform="matrix(1,0,0,1,837,313)">
+            <text x="-31.404px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:9.5px;fill:rgb(140,80,10);">CHECKPOINT</text>
+        </g>
+        <g transform="matrix(1,0,0,1,837,327)">
+            <g transform="matrix(8.5,0,0,8.5,0.709717,0)">
+            </g>
+            <g transform="matrix(8.5,0,0,8.5,3.07129,0)">
+            </g>
+            <text x="-18.656px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8.5px;fill:rgb(160,110,40);">(overﬂow)</text>
+        </g>
+        <g transform="matrix(1,0,0,1,837,141.908)">
+            <text x="-15.825px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8.5px;fill:rgb(160,110,40);">(natural)</text>
+        </g>
+    </g>
+    <g id="row-5-delta">
+        <rect x="12" y="336" width="876" height="46" style="fill:white;"/>
+        <g transform="matrix(1,0,0,1,42,363)">
+            <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">5</text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,357)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(68,102,187);">UInt32 <tspan x="30.105px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,80,373)">
+            <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(34,68,170);">+ 0x00000005</text>
+        </g>
+        <path d="M262,340L642,340C643.1,340 644,340.9 644,342L644,378C644,379.1 643.1,380 642,380L262,380C260.9,380 260,379.1 260,378L260,342C260,340.9 260.9,340 262,340Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,452,360)">
+            <text x="-120.957px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(68,68,102);">0000 1011 0010 1111  0100 0000 0000 0101</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,376)">
+            <text x="-71.416px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(136,153,204);">reconstructed at read time: prev + <tspan x="65.404px " y="0px ">Δ</tspan></text>
+        </g>
+        <g transform="matrix(1,0,0,1,720,363)">
+            <text x="-6.048px" y="0px" style="font-family:'Consolas', monospace;font-size:11px;fill:rgb(34,68,170);">+5</text>
+        </g>
+        <path d="M800,346L874,346C875.1,346 876,346.9 876,348L876,370C876,371.1 875.1,372 874,372L800,372C798.9,372 798,371.1 798,370L798,348C798,346.9 798.9,346 800,346Z" style="fill:rgb(232,240,255);stroke:rgb(68,102,187);stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1,837,363)">
+            <text x="-10.842px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(34,68,170);">delta</text>
+        </g>
+    </g>
+    <g id="row-ellipsis">
+        <rect x="12" y="382" width="876" height="32" style="fill:rgb(248,248,248);"/>
+        <g transform="matrix(1,0,0,1,42,402)">
+            <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
+        </g>
+        <g transform="matrix(1,0,0,1,452,402)">
+            <g>
+                <text x="-101.144px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
+                <text x="-83.808px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:13px;fill:rgb(204,204,204);">(more delta-encoded k-mers)</text>
+                <text x="94.644px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
+            </g>
+        </g>
+        <g transform="matrix(1,0,0,1,720,402)">
+            <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
+        </g>
+    </g>
+    <g id="annotations">
+    </g>
+    <g id="cp-brackets">
+    </g>
+</svg>

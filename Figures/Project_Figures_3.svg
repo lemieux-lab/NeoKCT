@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 900 560" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
+    <path d="M257.383,233.03L257.383,283.348" style="fill:none;stroke:black;stroke-width:1px;"/>
+    <path d="M132,145.087L132,197.445" style="fill:none;stroke:black;stroke-width:1px;"/>
+    <path d="M380.586,143.5L380.586,197.445" style="fill:none;stroke:black;stroke-width:1px;"/>
+    <path d="M676,143.5L676,310" style="fill:none;stroke:black;stroke-width:1px;"/>
+    <g id="tcga-kct">
+        <path d="M254,24L254,136C254,140.415 250.415,144 246,144L18,144C13.585,144 10,140.415 10,136L10,24C10,19.585 13.585,16 18,16L246,16C250.415,16 254,19.585 254,24Z" style="fill:rgb(232,240,255);stroke:rgb(68,102,187);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        <g transform="matrix(1,0,0,1,132,38)">
+            <text x="-57.776px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:12px;fill:rgb(34,68,170);">TCGA<tspan x="-24.226px -20.892px " y="0px 0px "> R</tspan>NA-seq KCT</text>
+        </g>
+        <g transform="matrix(1,0,0,1,132,57)">
+            <text x="-46.689px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(68,102,187);">5,000 tumor samples</text>
+        </g>
+        <g transform="matrix(1,0,0,1,132,73)">
+            <text x="-53.345px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(68,102,187);">all transcriptome k-mers</text>
+        </g>
+        <g transform="matrix(1,0,0,1,132,89)">
+            <g transform="matrix(10,0,0,10,2.22412,0)">
+            </g>
+            <g transform="matrix(10,0,0,10,5.00244,0)">
+            </g>
+            <text x="-34.46px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(68,102,187);">no prior ﬁltering</text>
+        </g>
+        <path d="M40,104L40,110C40,111.104 39.104,112 38,112L24,112C22.896,112 22,111.104 22,110L22,104C22,102.896 22.896,102 24,102L38,102C39.104,102 40,102.896 40,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <path d="M62,104L62,110C62,111.104 61.104,112 60,112L46,112C44.896,112 44,111.104 44,110L44,104C44,102.896 44.896,102 46,102L60,102C61.104,102 62,102.896 62,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <path d="M84,104L84,110C84,111.104 83.104,112 82,112L68,112C66.896,112 66,111.104 66,110L66,104C66,102.896 66.896,102 68,102L82,102C83.104,102 84,102.896 84,104Z" style="fill:rgb(208,120,48);fill-opacity:0.55;"/>
+        <path d="M106,104L106,110C106,111.104 105.104,112 104,112L90,112C88.896,112 88,111.104 88,110L88,104C88,102.896 88.896,102 90,102L104,102C105.104,102 106,102.896 106,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <path d="M128,104L128,110C128,111.104 127.104,112 126,112L112,112C110.896,112 110,111.104 110,110L110,104C110,102.896 110.896,102 112,102L126,102C127.104,102 128,102.896 128,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <path d="M150,104L150,110C150,111.104 149.104,112 148,112L134,112C132.896,112 132,111.104 132,110L132,104C132,102.896 132.896,102 134,102L148,102C149.104,102 150,102.896 150,104Z" style="fill:rgb(208,120,48);fill-opacity:0.55;"/>
+        <path d="M172,104L172,110C172,111.104 171.104,112 170,112L156,112C154.896,112 154,111.104 154,110L154,104C154,102.896 154.896,102 156,102L170,102C171.104,102 172,102.896 172,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <path d="M194,104L194,110C194,111.104 193.104,112 192,112L178,112C176.896,112 176,111.104 176,110L176,104C176,102.896 176.896,102 178,102L192,102C193.104,102 194,102.896 194,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <path d="M216,104L216,110C216,111.104 215.104,112 214,112L200,112C198.896,112 198,111.104 198,110L198,104C198,102.896 198.896,102 200,102L214,102C215.104,102 216,102.896 216,104Z" style="fill:rgb(208,120,48);fill-opacity:0.55;"/>
+        <path d="M238,104L238,110C238,111.104 237.104,112 236,112L222,112C220.896,112 220,111.104 220,110L220,104C220,102.896 220.896,102 222,102L236,102C237.104,102 238,102.896 238,104Z" style="fill:rgb(68,102,187);fill-opacity:0.35;"/>
+        <g transform="matrix(1,0,0,1,132,132)">
+            <text x="-57.452px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(119,136,170);">■ canonical</text>
+            <text x="-6.489px" y="0px" style="font-family:'MicrosoftYaHei', 'Microsoft YaHei', sans-serif;font-size:9px;fill:rgb(119,136,170);">◆</text>
+            <text x="1.413px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(119,136,170);">non-canonical</text>
+        </g>
+    </g>
+    <g id="reference-kct">
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M572,24L572,136C572,140.415 568.415,144 564,144L336,144C331.585,144 328,140.415 328,136L328,24C328,19.585 331.585,16 336,16L564,16C568.415,16 572,19.585 572,24Z" style="fill:rgb(243,243,243);stroke:rgb(136,136,136);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,380.586,38)">
+            <text x="-68.687px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:12px;fill:rgb(68,68,68);">Reference Genome KCT</text>
+        </g>
+        <g transform="matrix(1,0,0,1,380.586,57)">
+            <text x="-57.236px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,102,102);">in-silico k-mers from hg38</text>
+        </g>
+        <g transform="matrix(1,0,0,1,380.586,73)">
+            <text x="-51.689px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,102,102);">all canonical <tspan x="5.571px 12.241px 18.359px 21.138px " y="0px 0px 0px 0px ">AA k</tspan>-mers</text>
+        </g>
+        <g transform="matrix(1,0,0,1,380.586,89)">
+            <text x="-49.475px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,102,102);">ground truth reference</text>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M358,104L358,110C358,111.104 357.104,112 356,112L342,112C340.896,112 340,111.104 340,110L340,104C340,102.896 340.896,102 342,102L356,102C357.104,102 358,102.896 358,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M380,104L380,110C380,111.104 379.104,112 378,112L364,112C362.896,112 362,111.104 362,110L362,104C362,102.896 362.896,102 364,102L378,102C379.104,102 380,102.896 380,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M402,104L402,110C402,111.104 401.104,112 400,112L386,112C384.896,112 384,111.104 384,110L384,104C384,102.896 384.896,102 386,102L400,102C401.104,102 402,102.896 402,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M424,104L424,110C424,111.104 423.104,112 422,112L408,112C406.896,112 406,111.104 406,110L406,104C406,102.896 406.896,102 408,102L422,102C423.104,102 424,102.896 424,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M446,104L446,110C446,111.104 445.104,112 444,112L430,112C428.896,112 428,111.104 428,110L428,104C428,102.896 428.896,102 430,102L444,102C445.104,102 446,102.896 446,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M468,104L468,110C468,111.104 467.104,112 466,112L452,112C450.896,112 450,111.104 450,110L450,104C450,102.896 450.896,102 452,102L466,102C467.104,102 468,102.896 468,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M490,104L490,110C490,111.104 489.104,112 488,112L474,112C472.896,112 472,111.104 472,110L472,104C472,102.896 472.896,102 474,102L488,102C489.104,102 490,102.896 490,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-69.4142,0)">
+            <path d="M512,104L512,110C512,111.104 511.104,112 510,112L496,112C494.896,112 494,111.104 494,110L494,104C494,102.896 494.896,102 496,102L510,102C511.104,102 512,102.896 512,104Z" style="fill:rgb(136,136,136);fill-opacity:0.5;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,380.586,132)">
+            <text x="-43.517px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,170,170);">canonical k-mers only</text>
+        </g>
+    </g>
+    <g id="ms-kct">
+        <g transform="matrix(1,0,0,1,-92,0)">
+            <path d="M890,24L890,136C890,140.415 886.415,144 882,144L654,144C649.585,144 646,140.415 646,136L646,24C646,19.585 649.585,16 654,16L882,16C886.415,16 890,19.585 890,24Z" style="fill:rgb(232,245,232);stroke:rgb(58,138,58);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,676,38)">
+            <text x="-46.336px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:12px;fill:rgb(42,106,42);">MS Peptide KCT</text>
+        </g>
+        <g transform="matrix(1,0,0,1,676,57)">
+            <text x="-49.463px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(58,122,58);">tumor mass-spec data</text>
+        </g>
+        <g transform="matrix(1,0,0,1,676,73)">
+            <text x="-52.236px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(58,122,58);">AA<tspan x="-39.448px -36.67px " y="0px 0px "> k</tspan>-mers derived from</text>
+        </g>
+        <g transform="matrix(1,0,0,1,676,89)">
+            <g transform="matrix(10,0,0,10,-7.23633,0)">
+            </g>
+            <g transform="matrix(10,0,0,10,-4.45801,0)">
+            </g>
+            <text x="-49.473px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(58,122,58);">MS-identiﬁed peptides</text>
+        </g>
+        <g transform="matrix(1,0,0,1,-92,0)">
+            <path d="M676,104L676,110C676,111.104 675.104,112 674,112L660,112C658.896,112 658,111.104 658,110L658,104C658,102.896 658.896,102 660,102L674,102C675.104,102 676,102.896 676,104Z" style="fill:rgb(58,138,58);fill-opacity:0.45;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-92,0)">
+            <path d="M698,104L698,110C698,111.104 697.104,112 696,112L682,112C680.896,112 680,111.104 680,110L680,104C680,102.896 680.896,102 682,102L696,102C697.104,102 698,102.896 698,104Z" style="fill:rgb(58,138,58);fill-opacity:0.45;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-92,0)">
+            <path d="M720,104L720,110C720,111.104 719.104,112 718,112L704,112C702.896,112 702,111.104 702,110L702,104C702,102.896 702.896,102 704,102L718,102C719.104,102 720,102.896 720,104Z" style="fill:rgb(58,138,58);fill-opacity:0.45;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-92,0)">
+            <path d="M742,104L742,110C742,111.104 741.104,112 740,112L726,112C724.896,112 724,111.104 724,110L724,104C724,102.896 724.896,102 726,102L740,102C741.104,102 742,102.896 742,104Z" style="fill:rgb(58,138,58);fill-opacity:0.45;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-92,0)">
+            <path d="M764,104L764,110C764,111.104 763.104,112 762,112L748,112C746.896,112 746,111.104 746,110L746,104C746,102.896 746.896,102 748,102L762,102C763.104,102 764,102.896 764,104Z" style="fill:rgb(58,138,58);fill-opacity:0.45;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,676,127)">
+            <text x="-55.525px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(106,170,106);">peptide-derived k-mers only</text>
+        </g>
+    </g>
+    <g id="left-join-op">
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M420,204L420,230C420,233.311 417.311,236 414,236L66,236C62.689,236 60,233.311 60,230L60,204C60,200.689 62.689,198 66,198L414,198C417.311,198 420,200.689 420,204Z" style="fill:rgb(248,240,255);stroke:rgb(153,119,204);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,257.383,213)">
+            <text x="-63.253px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(102,68,170);">OUTER JOIN  (annotate)</text>
+        </g>
+        <g transform="matrix(1,0,0,1,257.383,229)">
+            <g transform="matrix(10,0,0,10,128.677,0)">
+            </g>
+            <text x="-128.677px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(153,102,204);">label reference vs. non-canonical (no k-mers are dropped)</text>
+        </g>
+    </g>
+    <g id="annotated-kct">
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M420,291L420,385C420,388.863 416.863,392 413,392L67,392C63.137,392 60,388.863 60,385L60,291C60,287.137 63.137,284 67,284L413,284C416.863,284 420,287.137 420,291Z" style="fill:rgb(248,244,255);stroke:rgb(153,119,204);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,257.383,304)">
+            <g transform="matrix(11,0,0,11,57.1323,0)">
+            </g>
+            <text x="-57.132px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(102,68,170);fill-opacity:0;">Rich KCT (Annotated)</text>
+        </g>
+        <path d="M437.383,338L492,338" style="fill:none;stroke:black;stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,1.06506,0,-23.8112)">
+            <path d="M676,366L676,419.514" style="fill:none;stroke:black;stroke-width:0.97px;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M408,316L408,321C408,322.104 407.104,323 406,323L74,323C72.896,323 72,322.104 72,321L72,316C72,314.896 72.896,314 74,314L406,314C407.104,314 408,314.896 408,316Z" style="fill:rgb(204,204,204);fill-opacity:0.7;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,420.154,321)">
+            <text x="-40.855px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(170,170,170);">canonical ●</text>
+        </g>
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M408,331L408,336C408,337.104 407.104,338 406,338L74,338C72.896,338 72,337.104 72,336L72,331C72,329.896 72.896,329 74,329L406,329C407.104,329 408,329.896 408,331Z" style="fill:rgb(204,204,204);fill-opacity:0.7;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,420.154,336)">
+            <text x="-40.855px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(170,170,170);">canonical ●</text>
+        </g>
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M408,346L408,351C408,352.104 407.104,353 406,353L74,353C72.896,353 72,352.104 72,351L72,346C72,344.896 72.896,344 74,344L406,344C407.104,344 408,344.896 408,346Z" style="fill:rgb(208,120,48);fill-opacity:0.6;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,420.154,351)">
+            <text x="-56.836px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(208,120,48);">non-canonical</text>
+            <text x="-4.801px" y="0px" style="font-family:'MicrosoftYaHei', 'Microsoft YaHei', sans-serif;font-size:8px;fill:rgb(208,120,48);">◆</text>
+        </g>
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M408,361L408,366C408,367.104 407.104,368 406,368L74,368C72.896,368 72,367.104 72,366L72,361C72,359.896 72.896,359 74,359L406,359C407.104,359 408,359.896 408,361Z" style="fill:rgb(204,204,204);fill-opacity:0.7;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,17.3827,0)">
+            <path d="M408,376L408,381C408,382.104 407.104,383 406,383L74,383C72.896,383 72,382.104 72,381L72,376C72,374.896 72.896,374 74,374L406,374C407.104,374 408,374.896 408,376Z" style="fill:rgb(208,120,48);fill-opacity:0.6;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,420.154,381)">
+            <text x="-56.836px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(208,120,48);">non-canonical</text>
+            <text x="-4.801px" y="0px" style="font-family:'MicrosoftYaHei', 'Microsoft YaHei', sans-serif;font-size:8px;fill:rgb(208,120,48);">◆</text>
+        </g>
+        <g transform="matrix(1,0,0,1,420.154,365.316)">
+            <text x="-40.855px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(170,170,170);">canonical ●</text>
+        </g>
+    </g>
+    <g id="inner-join-op">
+        <path d="M860,316L860,360C860,363.311 857.311,366 854,366L498,366C494.689,366 492,363.311 492,360L492,316C492,312.689 494.689,310 498,310L854,310C857.311,310 860,312.689 860,316Z" style="fill:rgb(240,255,240);stroke:rgb(58,138,58);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        <g transform="matrix(1,0,0,1,676,330)">
+            <g transform="matrix(11,0,0,11,22.615,0)">
+            </g>
+            <g transform="matrix(11,0,0,11,26.2781,0)">
+            </g>
+            <text x="-50.115px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(42,106,42);">INNER JOIN  (ﬁlter)</text>
+        </g>
+        <g transform="matrix(1,0,0,1,676,348)">
+            <g transform="matrix(10,0,0,10,55.5688,0)">
+            </g>
+            <g transform="matrix(10,0,0,10,58.3472,0)">
+            </g>
+            <text x="-112.278px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(58,122,58);">keep only k-mers present in MS-identiﬁed peptides</text>
+        </g>
+        <g transform="matrix(1,0,0,1,676,362)">
+            <text x="-138.579px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(106,170,106);">non-canonical k-mers that have no MS support are also dropped here</text>
+        </g>
+    </g>
+    <g id="result">
+        <path d="M880,430L880,532C880,536.415 876.415,540 872,540L468,540C463.585,540 460,536.415 460,532L460,430C460,425.585 463.585,422 468,422L872,422C876.415,422 880,425.585 880,430Z" style="fill:rgb(234,245,234);stroke:rgb(58,138,58);stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        <g transform="matrix(1,0,0,1,670,444)">
+            <text x="-82.472px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:13px;fill:rgb(42,106,42);">Non-canonical TSA<tspan x="36.223px 39.835px " y="0px 0px "> k</tspan>-mers</text>
+        </g>
+        <g transform="matrix(1,0,0,1,670,464)">
+            <text x="-112.556px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(58,122,58);">non-canonical  +  RNA-expressed  +  MS-validated</text>
+        </g>
+        <path d="M470,474L870,474" style="fill:none;fill-rule:nonzero;stroke:rgb(176,216,176);stroke-width:0.5px;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;"/>
+        <g transform="matrix(1,0,0,1,474,491)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(90,138,90);">→  would have been discarded by reference alignment (Fig. 1)</text>
+        </g>
+        <g transform="matrix(1,0,0,1,474,508)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(90,138,90);">→  have expression evidence across <tspan x="166.016px 172.124px " y="0px 0px ">TC</tspan>GA<tspan x="193.242px 196.021px " y="0px 0px "> s</tspan>amples</text>
+        </g>
+        <g transform="matrix(1,0,0,1,474,525)">
+            <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(90,138,90);">→  contribute to peptides observed by mass spectrometry</text>
+        </g>
+    </g>
+    <g transform="matrix(0.725119,0,0,0.725119,93.8304,320.208)">
+        <g transform="matrix(10,0,0,10,54.9805,0)">
+        </g>
+        <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(85,85,85);">ATFHEPLWCR</text>
+    </g>
+    <g transform="matrix(0.725119,0,0,0.725119,93.8304,365.208)">
+        <g transform="matrix(10,0,0,10,54.9805,0)">
+        </g>
+        <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(85,85,85);">KTVAEQLSMG</text>
+    </g>
+    <g transform="matrix(0.725119,0,0,0.725119,94.2092,335.814)">
+        <g transform="matrix(10,0,0,10,54.9805,0)">
+        </g>
+        <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(154,90,8);">DTRLKQTPAP</text>
+    </g>
+    <g transform="matrix(0.725119,0,0,0.725119,94.2092,350.814)">
+        <g transform="matrix(10,0,0,10,54.9805,0)">
+        </g>
+        <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(154,90,8);">HGAKLSTNMI</text>
+    </g>
+    <g transform="matrix(0.725119,0,0,0.725119,94.2092,380.814)">
+        <g transform="matrix(10,0,0,10,54.9805,0)">
+        </g>
+        <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(154,90,8);">MAGLKVTSAP</text>
+    </g>
+</svg>
