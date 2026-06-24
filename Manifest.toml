@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.5"
+julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "6a500dd79997c2f031d8ca1bd90a7cc90197c93f"
+project_hash = "ace007c304c4557f6f2ed60c6ae28f8fda0cc1bd"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -882,6 +882,12 @@ version = "2025.11.4"
 git-tree-sha1 = "cac9cc5499c25554cba55cd3c30543cff5ca4fab"
 uuid = "46d2c3a1-f734-5fdb-9937-b9b9aeba4221"
 version = "0.2.4"
+
+[[deps.NArrays]]
+deps = ["ProgressMeter"]
+git-tree-sha1 = "699c36e01f577efa88daa6d458b60b4b5bf47ef8"
+uuid = "b1bcd636-218e-4844-b7ac-c97daa0ccc50"
+version = "0.1.3"
 
 [[deps.NaNMath]]
 deps = ["OpenLibm_jll"]

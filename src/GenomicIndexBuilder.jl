@@ -60,7 +60,7 @@ end
 """
     build_genomic_index(fasta_path, annotation_path, K; ...)
 
-Build a `GenomicIndex{K÷3, AAAlphabet}` from an Ensembl transcript FASTA and a GTF or GFF3.
+Build a `KCT{K÷3, AAAlphabet, Nothing, BiotypLayer}` from an Ensembl transcript FASTA and a GTF or GFF3.
 `K` is the **DNA** k-mer length (same convention as `build_kct`).
 
 Biotype membership is determined from `transcript_biotype` in the FASTA headers (Ensembl cdna.all.fa)
@@ -71,9 +71,9 @@ function build_genomic_index(fasta_path::String, annotation_path::String, K::Int
                               checkpoint_size::Type{<:Unsigned}=UInt64,
                               delta_size::Type{<:Unsigned}=UInt32)
     sorted_kmers, bitmasks, biotype_names = _build_genomic_index_data(fasta_path, annotation_path, K)
-    return GenomicIndex{K÷3, AAAlphabet}(sorted_kmers, bitmasks, biotype_names;
-                                          checkpoint_size=checkpoint_size,
-                                          delta_size=delta_size)
+    return KCT{K÷3, AAAlphabet}(sorted_kmers, bitmasks, biotype_names;
+                                checkpoint_size=checkpoint_size,
+                                delta_size=delta_size)
 end
 
 function _build_genomic_index_data(fasta_path::String, annotation_path::String, K::Int)

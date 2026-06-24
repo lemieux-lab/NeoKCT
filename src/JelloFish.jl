@@ -142,11 +142,9 @@ function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000
             if length(paired) >= 2
                 left, right = pop!(paired), pop!(paired)
                 task = @spawn begin
-                    start = now()
                     Threads.atomic_add!(inflight, 1)
                     put!(merge_queue, merge(+, left, right))
                     Threads.atomic_sub!(inflight, 1)
-                    # verbose && tprintln("Completed merging in $(now()-start)")
                     put!(signal, nothing)
                 end
                 push!(merge_tasks, task)

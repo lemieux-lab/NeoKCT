@@ -161,25 +161,25 @@ function plot_deltaarray_growth(history::Vector{Any})
 end
 
 # Plot everything on a KCT
-function benchmark_kct(kct::NeoKCT{K, Ab}, benchmark_path::String; full_pointer_walkthrough::Bool=false) where {K, Ab<:Alphabet}
+function benchmark_kct(kct::KCT{K, Ab, CountsLayer}, benchmark_path::String; full_pointer_walkthrough::Bool=false) where {K, Ab<:Alphabet}
     mkpath(benchmark_path * "sizes_benchmarks/")
     benchmark_file = benchmark_path * "benchmark_data.json"
     history = load_benchmark_history(benchmark_file)
 
     printstyled("Measuring KCT components...\n", color=:green)
     benchmark_size = 100_000_000
-    n_samples = kct.samples.x
-    n_kmers = length(kct.seqs)
-    checkpoints_bytes = sizeof(eltype(kct.seqs.checkpoints)) * length(kct.seqs.checkpoints)
-    deltas_bytes = sizeof(eltype(kct.seqs.deltas)) * length(kct.seqs.deltas)
-    regular_cp_idx_bytes = sizeof(eltype(kct.seqs.regular_cp_idx)) * length(kct.seqs.regular_cp_idx)
+    n_samples = kct.counts.samples.x
+    n_kmers = length(kct.kmer.seqs)
+    checkpoints_bytes = sizeof(eltype(kct.kmer.seqs.checkpoints)) * length(kct.kmer.seqs.checkpoints)
+    deltas_bytes = sizeof(eltype(kct.kmer.seqs.deltas)) * length(kct.kmer.seqs.deltas)
+    regular_cp_idx_bytes = sizeof(eltype(kct.kmer.seqs.regular_cp_idx)) * length(kct.kmer.seqs.regular_cp_idx)
     kmer_seq_bytes = checkpoints_bytes + deltas_bytes + regular_cp_idx_bytes
-    chunk_ids_bytes = sizeof(UInt32) * length(kct.flat_cids)
-    n_cids_bytes = sizeof(UInt16) * length(kct.n_cids)
-    count_words_bytes = Base.summarysize(kct.counts.words)
-    bitmap_bytes = Base.summarysize(kct.counts.bitmap)
+    chunk_ids_bytes = sizeof(UInt32) * length(kct.counts.flat_cids)
+    n_cids_bytes = sizeof(UInt16) * length(kct.counts.n_cids)
+    count_words_bytes = Base.summarysize(kct.counts.counts.words)
+    bitmap_bytes = Base.summarysize(kct.counts.counts.bitmap)
 
-    k_mers = rand(kct.seqs.checkpoints, benchmark_size)
+    k_mers = rand(kct.kmer.seqs.checkpoints, benchmark_size)
     t_start = now()
     @showprogress "Benchmarking Query Speed for $benchmark_size k-mers..." for k_mer in k_mers
         findfirst(kct, k_mer)

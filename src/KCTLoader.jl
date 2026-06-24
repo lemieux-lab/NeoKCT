@@ -1,29 +1,24 @@
-# Global loader. Dispatches via version stored in the first 64 bits of the file.
-function load_kct(path::String)
-    open(path, "r") do io
-        version = read(io, Float64)
-        return load(io, Val(version))
-    end
-end
-
-# Global writer. Dispatches the writing strategy based on kct.version.
-function write_kct(kct::NeoKCT{K, Ab}, path::String) where {K, Ab}
-    open(path, "w") do io
-        write(io, kct.version)
-        write(io, kct, Val(kct.version))
-    end
-end
-
-function write_kct(rich::RichKCT{K, Ab}, path::String) where {K, Ab}
-    open(path, "w") do io
-        write(io, rich.version)
-        write(io, rich, Val(rich.version))
-    end
-end
+const KCT_VERSION = 3.0
 
 const _WORD_TYPES = Dict{Int64, DataType}(
     1 => UInt8, 2 => UInt16, 4 => UInt32, 8 => UInt64, 16 => UInt128
 )
+
+## PUBLIC API ##
+
+function write_kct(kct::KCT{K, Ab}, path::String) where {K, Ab}
+    open(path, "w") do io
+        write(io, KCT_VERSION)
+        _write_kct(io, kct, Val(KCT_VERSION))
+    end
+end
+
+function load_kct(path::String)
+    open(path, "r") do io
+        version = read(io, Float64)
+        return _load_kct(io, Val(version))
+    end
+end
 
 function get_version(path::String)
     open(path, "r") do io
@@ -31,45 +26,221 @@ function get_version(path::String)
     end
 end
 
-### GENOMIC INDEX SERIALISATION ###
+## V3.0 FORMAT ##
+# Header: [Float64 version][Int64 K][Int64 Ab_name_len][UInt8... Ab_name][UInt8 layers_mask][Int64 n_kmers]
+# KmerLayer: [Int64 sizeof(C)][Int64 sizeof(D)][Int64 cp_interval][Int64 n_cp][Int64 n_rci][C... cps][D... deltas][Int64... rci]
+# CountsLayer (mask bit 0): [Int64 n_samples][Int64 n_flat_cids][Int64 words_len][Int64 bitmap_len][Int64 sizeof(W)][UInt16... n_cids][UInt32... flat_cids][W... words][UInt64... bitmap.chunks]
+# BiotypLayer (mask bit 1): [Int64 n_names]([Int64 len][UInt8... name]...)[Int64 pool_len][UInt64... pool][UInt16... ids]
 
-const GIDX_VERSION = 1.0
+_layers_mask(::Nothing, ::Nothing) = UInt8(0)
+_layers_mask(::CountsLayer, ::Nothing) = UInt8(1)
+_layers_mask(::Nothing, ::BiotypLayer) = UInt8(2)
+_layers_mask(::CountsLayer, ::BiotypLayer) = UInt8(3)
 
-function write_gidx(gidx::GenomicIndex{K, Ab}, path::String) where {K, Ab}
-    open(path, "w") do io
-        write(io, GIDX_VERSION)
-        _write_gidx(io, gidx, Val(GIDX_VERSION))
-    end
+function _write_kct(io::IO, kct::KCT{K, Ab, Counts, Biotype, C, D}, ::Val{3.0}) where {K, Ab<:Alphabet, Counts, Biotype, C<:Unsigned, D<:Unsigned}
+    Ab_name = String(Ab.name.singletonname)
+    write(io, Int64(K))
+    write(io, Int64(length(Ab_name))); write(io, codeunits(Ab_name))
+    write(io, _layers_mask(kct.counts, kct.biotype))
+    write(io, Int64(length(kct.kmer.seqs)))
+    write(io, Int64(sizeof(C)))
+    write(io, Int64(sizeof(D)))
+    write(io, Int64(kct.kmer.seqs.checkpoint_interval))
+    write(io, Int64(length(kct.kmer.seqs.checkpoints)))
+    write(io, Int64(length(kct.kmer.seqs.regular_cp_idx)))
+    write(io, kct.kmer.seqs.checkpoints)
+    write(io, kct.kmer.seqs.deltas)
+    write(io, Int64.(kct.kmer.seqs.regular_cp_idx))
+    _write_counts(io, kct.counts)
+    _write_biotype(io, kct.biotype)
 end
+
+_write_counts(::IO, ::Nothing) = nothing
+function _write_counts(io::IO, cl::CountsLayer)
+    W = eltype(cl.counts.words)
+    write(io, Int64(cl.samples.x))
+    write(io, Int64(length(cl.flat_cids)))
+    write(io, Int64(length(cl.counts.words)))
+    write(io, Int64(length(cl.counts.bitmap)))
+    write(io, Int64(sizeof(W)))
+    write(io, cl.n_cids)
+    write(io, cl.flat_cids)
+    write(io, cl.counts.words)
+    for chunk in cl.counts.bitmap.chunks; write(io, chunk); end
+end
+
+_write_biotype(::IO, ::Nothing) = nothing
+function _write_biotype(io::IO, bl::BiotypLayer)
+    write(io, Int64(length(bl.biotype_names)))
+    for name in bl.biotype_names
+        write(io, Int64(length(name))); write(io, codeunits(name))
+    end
+    write(io, Int64(length(bl.pool)))
+    write(io, bl.pool)
+    write(io, bl.ids)
+end
+
+function _load_kct(io::IO, ::Val{3.0})
+    K = Int(read(io, Int64))
+    Ab_name_len = read(io, Int64)
+    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    layers_mask = read(io, UInt8)
+    n_kmers = read(io, Int64)
+    C_type = _WORD_TYPES[read(io, Int64)]
+    D_type = _WORD_TYPES[read(io, Int64)]
+    cp_interval = Int(read(io, Int64))
+    n_cp = read(io, Int64)
+    n_rci = read(io, Int64)
+    checkpoints = Vector{C_type}(undef, n_cp); read!(io, checkpoints)
+    deltas = Vector{D_type}(undef, n_kmers); read!(io, deltas)
+    rci_i64 = Vector{Int64}(undef, n_rci); read!(io, rci_i64)
+    seqs = DeltaArray(checkpoints, deltas, UInt64.(rci_i64), cp_interval)
+    kl = KmerLayer{K, Ab, C_type, D_type}(seqs, Ref(20) => fill(0:-1, 4^15))
+    cl = (layers_mask & UInt8(1)) != 0 ? _read_counts(io, n_kmers) : nothing
+    bl = (layers_mask & UInt8(2)) != 0 ? _read_biotype(io, n_kmers) : nothing
+    kct = _build_kct(kl, cl, bl)
+    compute_index!(kct)
+    return kct
+end
+
+function _read_counts(io::IO, n_kmers::Int64)
+    n_samples = read(io, Int64)
+    n_flat_cids = read(io, Int64)
+    words_len = read(io, Int64)
+    bitmap_len = read(io, Int64)
+    W = _WORD_TYPES[read(io, Int64)]
+    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
+    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
+    words = Vector{W}(undef, words_len); read!(io, words)
+    bitmap = BitVector(undef, bitmap_len)
+    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
+    return CountsLayer(n_cids, flat_cids, PackedArray{UInt32, W}(words, bitmap), Ref(n_samples))
+end
+
+function _read_biotype(io::IO, n_kmers::Int64)
+    n_names = read(io, Int64)
+    biotype_names = Vector{String}(undef, n_names)
+    for i in 1:n_names
+        len = read(io, Int64)
+        biotype_names[i] = String([read(io, UInt8) for _ in 1:len])
+    end
+    pool_len = read(io, Int64)
+    pool = Vector{UInt64}(undef, pool_len); read!(io, pool)
+    ids = Vector{UInt16}(undef, n_kmers); read!(io, ids)
+    return BiotypLayer(ids, pool, biotype_names)
+end
+
+_build_kct(kl, ::Nothing, ::Nothing) = KCT(kl)
+_build_kct(kl, cl::CountsLayer, ::Nothing) = KCT(kl, cl)
+_build_kct(kl, cl::CountsLayer, bl::BiotypLayer) = KCT(kl, cl, bl)
+_build_kct(kl, ::Nothing, bl::BiotypLayer) = KCT(kl, bl)
+
+## RETROCOMPAT LOADERS ##
+
+# V2.0 (RichKCT) → KCT{K,Ab,CountsLayer,BiotypLayer}
+function _load_kct(io::IO, ::Val{2.0})
+    kct = _load_kct(io, Val(1.4))
+    n_names = read(io, Int64)
+    names = Vector{String}(undef, n_names)
+    for i in 1:n_names
+        len = read(io, Int64)
+        names[i] = String([read(io, UInt8) for _ in 1:len])
+    end
+    pool_len = read(io, Int64)
+    pool = Vector{UInt64}(undef, pool_len); read!(io, pool)
+    n_kmers = length(kct.kmer.seqs)
+    ids = Vector{UInt16}(undef, n_kmers); read!(io, ids)
+    return KCT(kct.kmer, kct.counts, BiotypLayer(ids, pool, names))
+end
+
+# V1.4 (NeoKCT) → KCT{K,Ab,CountsLayer,Nothing,UInt64,UInt32}
+function _load_kct(io::IO, ::Val{1.4})
+    K = Int(read(io, Int64))
+    Ab_name_len = read(io, Int64)
+    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    n_kmers = read(io, Int64)
+    n_flat_cids = read(io, Int64)
+    words_len = read(io, Int64)
+    bitmap_len = read(io, Int64)
+    n_samples = read(io, Int64)
+    W = _WORD_TYPES[read(io, Int64)]
+    cp_interval = Int(read(io, Int64))
+    n_cp = read(io, Int64)
+    n_rci = read(io, Int64)
+    checkpoints = Vector{UInt64}(undef, n_cp); read!(io, checkpoints)
+    deltas = Vector{UInt32}(undef, n_kmers); read!(io, deltas)
+    rci_i64 = Vector{Int64}(undef, n_rci); read!(io, rci_i64)
+    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
+    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
+    words = Vector{W}(undef, words_len); read!(io, words)
+    bitmap = BitVector(undef, bitmap_len)
+    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
+    seqs = DeltaArray(checkpoints, deltas, UInt64.(rci_i64), cp_interval)
+    kl = KmerLayer{K, Ab, UInt64, UInt32}(seqs, Ref(20) => fill(0:-1, 4^15))
+    cl = CountsLayer(n_cids, flat_cids, PackedArray{UInt32, W}(words, bitmap), Ref(n_samples))
+    kct = KCT(kl, cl)
+    compute_index!(kct)
+    return kct
+end
+
+# V1.3 (NeoKCT, flat seqs) → KCT{K,Ab,CountsLayer,Nothing,UInt64,UInt32}
+function _load_kct(io::IO, ::Val{1.3})
+    K = Int(read(io, Int64))
+    Ab_name_len = read(io, Int64)
+    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    n_kmers = read(io, Int64)
+    n_flat_cids = read(io, Int64)
+    words_len = read(io, Int64)
+    bitmap_len = read(io, Int64)
+    n_samples = read(io, Int64)
+    W = _WORD_TYPES[read(io, Int64)]
+    raw_seqs = Vector{UInt64}(undef, n_kmers); read!(io, raw_seqs)
+    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
+    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
+    words = Vector{W}(undef, words_len); read!(io, words)
+    bitmap = BitVector(undef, bitmap_len)
+    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
+    seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
+    kl = KmerLayer{K, Ab, UInt64, UInt32}(seqs, Ref(20) => fill(0:-1, 4^15))
+    cl = CountsLayer(n_cids, flat_cids, PackedArray{UInt32, W}(words, bitmap), Ref(n_samples))
+    kct = KCT(kl, cl)
+    compute_index!(kct)
+    return kct
+end
+
+# V1.2 (NeoKCT, flat seqs + CSR offsets) → KCT{K,Ab,CountsLayer,Nothing,UInt64,UInt32}
+function _load_kct(io::IO, ::Val{1.2})
+    K = Int(read(io, Int64))
+    Ab_name_len = read(io, Int64)
+    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    n_kmers = read(io, Int64)
+    n_flat_cids = read(io, Int64)
+    words_len = read(io, Int64)
+    bitmap_len = read(io, Int64)
+    n_samples = read(io, Int64)
+    W = _WORD_TYPES[read(io, Int64)]
+    raw_seqs = Vector{UInt64}(undef, n_kmers); read!(io, raw_seqs)
+    offsets_u32 = Vector{UInt32}(undef, n_kmers + 1); read!(io, offsets_u32)
+    n_cids = UInt16.(diff(offsets_u32))
+    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
+    words = Vector{W}(undef, words_len); read!(io, words)
+    bitmap = BitVector(undef, bitmap_len)
+    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
+    seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
+    kl = KmerLayer{K, Ab, UInt64, UInt32}(seqs, Ref(20) => fill(0:-1, 4^15))
+    cl = CountsLayer(n_cids, flat_cids, PackedArray{UInt32, W}(words, bitmap), Ref(n_samples))
+    kct = KCT(kl, cl)
+    compute_index!(kct)
+    return kct
+end
+
+## GENOMIC INDEX RETROCOMPAT ##
 
 function load_gidx(path::String)
     open(path, "r") do io
         version = read(io, Float64)
         return _load_gidx(io, Val(version))
     end
-end
-
-function _write_gidx(io::IO, gidx::GenomicIndex{K, Ab}, ::Val{1.0}) where {K, Ab}
-    Ab_name = String(Ab.name.singletonname)
-    n_kmers = length(gidx.seqs)
-    write(io, Int64(K))
-    write(io, Int64(length(Ab_name))); write(io, codeunits(Ab_name))
-    write(io, Int64(n_kmers))
-    write(io, Int64(sizeof(eltype(gidx.seqs.checkpoints))))
-    write(io, Int64(sizeof(eltype(gidx.seqs.deltas))))
-    write(io, Int64(gidx.seqs.checkpoint_interval))
-    write(io, Int64(length(gidx.seqs.checkpoints)))
-    write(io, Int64(length(gidx.seqs.regular_cp_idx)))
-    write(io, gidx.seqs.checkpoints)
-    write(io, gidx.seqs.deltas)
-    write(io, Int64.(gidx.seqs.regular_cp_idx))
-    write(io, Int64(length(gidx.biotype_names)))
-    for name in gidx.biotype_names
-        write(io, Int64(length(name))); write(io, codeunits(name))
-    end
-    write(io, Int64(length(gidx.pool)))
-    write(io, gidx.pool)
-    write(io, gidx.biotype_ids)
 end
 
 function _load_gidx(io::IO, ::Val{1.0})
@@ -95,288 +266,8 @@ function _load_gidx(io::IO, ::Val{1.0})
     pool_len = read(io, Int64)
     pool = Vector{UInt64}(undef, pool_len); read!(io, pool)
     biotype_ids = Vector{UInt16}(undef, n_kmers); read!(io, biotype_ids)
-    gidx = GenomicIndex{K, Ab}(seqs, biotype_ids, pool, Ref(20) => fill(0:-1, 4^15), biotype_names)
-    compute_index!(gidx)
-    return gidx
-end
-
-### VERSION DEPENDENT LOADERS ###
-## V2.0 — RichKCT (NeoKCT v1.4 body + BiotypLayer) ##
-function Base.write(io::IO, rich::RichKCT{K, Ab, C}, ::Val{2.0}) where {K, Ab<:Alphabet, C}
-    write(io, rich.kct, Val(1.4))  # NeoKCT body, no version prefix
-    write(io, Int64(length(rich.biotypes.biotype_names)))
-    for name in rich.biotypes.biotype_names
-        write(io, Int64(length(name))); write(io, codeunits(name))
-    end
-    write(io, Int64(length(rich.biotypes.pool)))
-    write(io, rich.biotypes.pool)
-    write(io, rich.biotypes.ids)
-end
-
-function load(io::IO, ::Val{2.0})
-    kct = load(io, Val(1.4))
-    n_names = read(io, Int64)
-    names = Vector{String}(undef, n_names)
-    for i in 1:n_names
-        len = read(io, Int64)
-        names[i] = String([read(io, UInt8) for _ in 1:len])
-    end
-    pool_len = read(io, Int64)
-    pool = Vector{UInt64}(undef, pool_len); read!(io, pool)
-    ids = Vector{UInt16}(undef, length(kct.seqs)); read!(io, ids)
-    return _wrap_rich(kct, BiotypLayer(ids, pool, names))
-end
-
-# Dispatch helper to extract {K,Ab,C} from the loaded NeoKCT.
-_wrap_rich(kct::NeoKCT{K,Ab,C}, biotypes::BiotypLayer) where {K,Ab,C} =
-    RichKCT{K,Ab,C}(kct, biotypes)
-
-## V1.4 ##
-function Base.write(io::IO, kct::NeoKCT{K, Ab, C}, ::Val{1.4}) where {K, Ab<:Alphabet, C}
-    W = eltype(kct.counts.words)
-    Ab_name = String(Ab.name.singletonname)
-    write(io, Int64(K))
-    write(io, Int64(length(Ab_name))); write(io, codeunits(Ab_name))
-    write(io, Int64(length(kct.seqs)))  # n_kmers
-    write(io, Int64(length(kct.flat_cids)))
-    write(io, Int64(length(kct.counts.words)))
-    write(io, Int64(length(kct.counts.bitmap)))
-    write(io, Int64(kct.samples.x))
-    write(io, Int64(sizeof(W)))
-    # DeltaArray fields
-    write(io, Int64(kct.seqs.checkpoint_interval))
-    write(io, Int64(length(kct.seqs.checkpoints)))
-    write(io, Int64(length(kct.seqs.regular_cp_idx)))
-    write(io, kct.seqs.checkpoints)
-    write(io, kct.seqs.deltas)  # Vector{UInt32}
-    write(io, Int64.(kct.seqs.regular_cp_idx))
-    # rest
-    write(io, kct.n_cids)
-    write(io, kct.flat_cids)
-    write(io, kct.counts.words)
-    for chunk in kct.counts.bitmap.chunks; write(io, chunk); end
-end
-
-function load(io::IO, ::Val{1.4})
-    K = read(io, Int64)
-    Ab_name_len = read(io, Int64)
-    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
-    n_kmers = read(io, Int64)
-    n_flat_cids = read(io, Int64)
-    words_len = read(io, Int64)
-    bitmap_len = read(io, Int64)
-    n_samples = read(io, Int64)
-    word_size_b = read(io, Int64)
-    W = _WORD_TYPES[word_size_b]
-    # DeltaArray fields
-    C = Int(read(io, Int64))
-    n_cp = read(io, Int64)
-    n_rci = read(io, Int64)
-    checkpoints = Vector{UInt64}(undef, n_cp); read!(io, checkpoints)
-    deltas = Vector{UInt32}(undef, n_kmers); read!(io, deltas)
-    rci_i64 = Vector{Int64}(undef, n_rci); read!(io, rci_i64)
-    regular_cp_idx = Vector{Int}(rci_i64)
-    regular_cp_idx = UInt64.(regular_cp_idx)  # TODO: Fix Int → Uint Read/Write (now UInt for regular_cp_index)
-    # rest
-    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
-    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
-    words = Vector{W}(undef, words_len); read!(io, words)
-    bitmap = BitVector(undef, bitmap_len)
-    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
-
-    seqs = DeltaArray(checkpoints, deltas, regular_cp_idx, C)
-    idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, 1}(seqs, n_cids, flat_cids,
-               PackedArray{UInt32, W}(words, bitmap),
-               idx, Ref(n_samples), 1.4)
+    kl = KmerLayer{K, Ab, C_type, D_type}(seqs, Ref(20) => fill(0:-1, 4^15))
+    kct = KCT(kl, BiotypLayer(biotype_ids, pool, biotype_names))
     compute_index!(kct)
     return kct
 end
-
-## V1.3 ##
-function Base.write(io::IO, kct::NeoKCT{K, Ab, C}, ::Val{1.3}) where {K, Ab<:Alphabet, C}
-    W = eltype(kct.counts.words)
-    seqs = collect(kct.seqs)   # decode to flat for legacy format
-    Ab_name = String(Ab.name.singletonname)
-    write(io, Int64(K))
-    write(io, Int64(length(Ab_name)));  write(io, codeunits(Ab_name))
-    write(io, Int64(length(seqs)))
-    write(io, Int64(length(kct.flat_cids)))
-    write(io, Int64(length(kct.counts.words)))
-    write(io, Int64(length(kct.counts.bitmap)))
-    write(io, Int64(kct.samples.x))
-    write(io, Int64(sizeof(W)))
-    write(io, seqs)
-    write(io, kct.n_cids)
-    write(io, kct.flat_cids)
-    write(io, kct.counts.words)
-    for chunk in kct.counts.bitmap.chunks; write(io, chunk); end
-end
-
-function load(io::IO, ::Val{1.3})
-    K = read(io, Int64)
-    Ab_name_len = read(io, Int64)
-    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
-    n_kmers = read(io, Int64)
-    n_flat_cids = read(io, Int64)
-    words_len = read(io, Int64)
-    bitmap_len = read(io, Int64)
-    n_samples = read(io, Int64)
-    word_size_b = read(io, Int64)
-    W = _WORD_TYPES[word_size_b]
-
-    raw_seqs = Vector{UInt64}(undef, n_kmers); read!(io, raw_seqs)
-    n_cids = Vector{UInt16}(undef, n_kmers); read!(io, n_cids)
-    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
-    words = Vector{W}(undef, words_len); read!(io, words)
-    bitmap = BitVector(undef, bitmap_len)
-    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
-
-    seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
-    idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, 1}(seqs, n_cids, flat_cids,
-               PackedArray{UInt32, W}(words, bitmap),
-               idx, Ref(n_samples), 1.4)
-    compute_index!(kct)
-    return kct
-end
-
-## V1.2 ##
-function load(io::IO, ::Val{1.2})
-    K = read(io, Int64)
-    Ab_name_len = read(io, Int64)
-    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
-    n_kmers = read(io, Int64)
-    n_flat_cids = read(io, Int64)
-    words_len = read(io, Int64)
-    bitmap_len = read(io, Int64)
-    n_samples = read(io, Int64)
-    word_size_b = read(io, Int64)
-    W = _WORD_TYPES[word_size_b]
-
-    raw_seqs = Vector{UInt64}(undef, n_kmers); read!(io, raw_seqs)
-    offsets_u32 = Vector{UInt32}(undef, n_kmers + 1); read!(io, offsets_u32)
-    n_cids = UInt16.(diff(offsets_u32))
-    flat_cids = Vector{UInt32}(undef, n_flat_cids); read!(io, flat_cids)
-    words = Vector{W}(undef, words_len); read!(io, words)
-    bitmap = BitVector(undef, bitmap_len)
-    for i in eachindex(bitmap.chunks); bitmap.chunks[i] = read(io, UInt64); end
-
-    seqs = DeltaArray(raw_seqs, DEFAULT_CHECKPOINT_INTERVAL)
-    idx = Ref(0) => fill(0:-1, 4^15)
-    kct = NeoKCT{K, Ab, 1}(seqs, n_cids, flat_cids,
-               PackedArray{UInt32, W}(words, bitmap),
-               idx, Ref(n_samples), 1.4)
-    compute_index!(kct)
-    return kct
-end
-
-# ## V1.1 ##  /!\ NOW FULLY DEPRECATED /!\
-# function Base.write(io::IO, kct::NeoKCT{K, Ab}, version::V) where {K, Ab<:Alphabet, V<:Val{1.1}}
-#     Ab_name = String(Ab.name.singletonname)
-#     kmer_C = isempty(kct.table) ? 1 : length(kct.table[1].seq.data)
-#     write(io, Int64(K))
-#     write(io, Int64(length(Ab_name)))
-#     write(io, codeunits(Ab_name))
-#     write(io, Int64(kmer_C))
-#     write(io, Int64(length(kct.table)))
-#     write(io, Int64(length(kct.counts.words)))
-#     write(io, Int64(length(kct.counts.bitmap)))
-#     write(io, Int64(kct.samples.x))
-#     for k_elem in kct.table
-#         for d in k_elem.seq.data; write(io, d); end
-#         write(io, Int32(length(k_elem.chunk_ids)))
-#         for cid in k_elem.chunk_ids; write(io, cid); end
-#     end
-#     write(io, kct.counts.words)  # bulk write
-#     for chunk in kct.counts.bitmap.chunks
-#         write(io, chunk)
-#     end
-# end
-
-# function load(io::IO, version::Val{1.1})
-#     K = read(io, Int64)
-#     Ab_name_len = read(io, Int64)
-#     Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))  # once only
-#     kmer_C = read(io, Int64)
-#     table_length = read(io, Int64)
-#     words_length = read(io, Int64)
-#     bitmap_length = read(io, Int64)
-#     samples_count = read(io, Int64)
-
-#     table = Vector{K_Element{K, Ab, kmer_C}}(undef, table_length)
-#     @showprogress "Reading K-mer Table..." for i in 1:table_length
-#         data  = NTuple{kmer_C, UInt64}(read(io, UInt64) for _ in 1:kmer_C)
-#         word_C = Int64(read(io, Int32))
-#         chunk_ids = NTuple{word_C, UInt32}(read(io, UInt32) for _ in 1:word_C)
-#         table[i] = K_Element{K, Ab, kmer_C}(Kmer{Ab, K, kmer_C}(Kmers.unsafe, data), chunk_ids)
-#     end
-
-#     words = Vector{UInt64}(undef, words_length)
-#     read!(io, words)  # bulk read
-
-#     bitmap = BitVector(undef, bitmap_length)
-#     for i in eachindex(bitmap.chunks)
-#         bitmap.chunks[i] = read(io, UInt64)
-#     end
-
-#     idx = Ref(0)=>fill(0:-1, 4^15)
-#     kct = NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, Ref(samples_count), 1.1)
-#     compute_index!(kct)
-#     return kct
-# end
-# ## V1.0 ##
-# function Base.write(io::IO, tuple::Tuple, version::Union{Val{1.0}, Val{1.1}})
-#     write(io, length(tuple))
-#     write.(io, tuple)
-# end
-
-# function Base.write(io::IO, k_elem::K_Element{K, Ab, C}, version::Union{Val{1.0}, Val{1.1}}) where {K, Ab<:AAAlphabet, C}
-#     write(io, K)
-#     write(io, codeunits(String(Ab.name.singletonname)))
-#     write(io, C)
-#     write.(io, k_elem.seq.data)
-#     write(io, k_elem.chunk_ids, version)
-# end
-
-# function Base.write(io::IO, kct::NeoKCT{K, Ab}, version::V) where {K, Ab<:Alphabet, V<:Val{1.0}}
-#     write(io, kct.version)
-#     write(io, K)
-#     write(io, (String(Ab.name.singletonname)))
-#     write(io, length(kct.table))
-#     write(io, length(kct.counts.words))
-#     write(io, length(kct.counts.bitmap))
-#     write.(io, kct.table, version)
-#     write(io, kct.counts.words)
-#     write(io, kct.counts.bitmap)
-#     write(io, kct.samples.x)
-# end
-
-# function load(io::IO, version::Val{1.0})
-#     K = read(io, Int64)
-#     Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
-#     table_length = read(io, Int64)
-#     words_length = read(io, Int64)
-#     bitmap_length = read(io, Int64)
-#     table = Array{K_Element{K, Ab, 1}, 1}(undef, table_length)
-#     @showprogress for i in 1:table_length
-#         K = read(io, Int64)
-#         Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:10])))  # TODO: Fix this abomination
-#         kmer_C = read(io, Int64)
-#         data = Tuple(read(io, UInt64) for _ in 1:kmer_C)
-#         word_C = read(io, Int64)
-#         chunk_ids = Tuple(read(io, UInt32) for _ in 1:word_C)
-#         table[i] = K_Element{K, Ab, kmer_C}(Kmer{Ab, K, kmer_C}(Kmers.unsafe, data), chunk_ids)
-#     end
-#     words = Vector{UInt64}(undef, words_length)
-#     @showprogress for i in 1:words_length
-#         words[i] = read(io, UInt64)
-#     end
-#     bitmap = BitVector(undef, bitmap_length)
-#     for i in eachindex(bitmap.chunks)
-#         bitmap.chunks[i] = read(io, UInt64)
-#     end
-#     samples = Ref(read(io, Int64))
-#     idx = Ref(20)=>fill(0:-1, 4^15)
-#     return NeoKCT(table, PackedArray{UInt32, UInt64}(words, bitmap, words_length), idx, samples, 1.0)
-# end

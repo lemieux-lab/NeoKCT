@@ -6,12 +6,30 @@ using Base.Threads
 using NArrays
 using Dates
 
-include("JelloFish.jl")
-
 abstract type AbstractLayer end
 
-## K-mer Layer ## 
+## K-mer Layer ##
 
+"""
+    KmerLayer{K, Ab, C, D} <: AbstractLayer
+
+Sorted, delta-compressed store of all unique k-mers in the table.
+
+K-mers are stored as their raw `UInt64` bit-encoding in a `DeltaArray`, which
+exploits the sorted order to keep only small deltas between consecutive entries.
+A prefix-based binary search index (`idx`) partitions the space by the leading
+`prefix_size` symbols so lookups skip directly to the right region.
+
+# Type Parameters
+- `K`: k-mer length in amino-acid symbols
+- `Ab`: alphabet type (e.g. `AAAlphabet`)
+- `C`: checkpoint word type for the `DeltaArray` (default `UInt64`)
+- `D`: delta word type for the `DeltaArray` (default `UInt32`)
+
+# Fields
+- `seqs`: delta-compressed sorted k-mer bit-encodings
+- `idx`: prefix-length reference paired with a per-prefix `UnitRange` lookup table
+"""
 struct KmerLayer{K, Ab <: Alphabet, C <: Unsigned, D <: Unsigned} <: AbstractLayer
     seqs::DeltaArray{C, D}
     idx::Pair{Base.RefValue{Int64}, Vector{UnitRange{Int64}}}
@@ -56,6 +74,10 @@ function compute_index!(kl::KmerLayer{K, Ab}; prefix_size::Int64=4) where {K, Ab
     last_key = 0x0000000000000000
     n = length(kl.seqs)
     prefix_shift = prefix_size * bits_per_symbol(Ab())
+
+    # Walk the sorted k-mer array and record where each distinct prefix group starts.
+    # On a prefix transition at position i, seal the range for the previous key and
+    # open a new one from i; findfirst uses these ranges to skip most of the array.
     @showprogress "Computing Binary Search Index..." for (i, val) in enumerate(kl.seqs)
         key = val >> prefix_shift
         if key > last_key
@@ -70,6 +92,22 @@ end
 
 ## Counts Layer ##
 
+"""
+    CountsLayer <: AbstractLayer
+
+CSR-style store of per-k-mer count vectors across all loaded samples.
+
+Each k-mer maps to one or more count words held in a `PackedArray`.
+The mapping is encoded as a flat list of count-word IDs (`flat_cids`) and a
+parallel `n_cids` vector recording how many IDs each k-mer owns, so offsets
+can be reconstructed on the fly without storing them explicitly.
+
+# Fields
+- `n_cids`: number of count-word IDs per k-mer; cumulative sum reconstructs offsets
+- `flat_cids`: flat array of count-word IDs, one contiguous block per k-mer
+- `counts`: packed count words, deduplicated across k-mers with identical count vectors
+- `samples`: number of samples currently stored in this layer
+"""
 struct CountsLayer <: AbstractLayer
     n_cids::Vector{UInt16}  # number of cids per k-mer (cumsum to reconstruct offset vector)
     flat_cids::Vector{UInt32}
@@ -86,6 +124,9 @@ function assemble_count_vector(cl::CountsLayer, i::Integer)
     lo = 1 + Int64(sum(@view cl.n_cids[1:i-1]))
     cids = @view cl.flat_cids[lo : lo + cl.n_cids[i] - 1]
     counts = reduce(vcat, [cl.counts[Int(c)] for c in cids])
+
+    # Trailing zeros (samples where this k-mer was absent) are stored implicitly to save space.
+    # Materialise them only when reading, by padding to the full sample count.
     n_missing = cl.samples.x - length(counts)
     return n_missing > 0 ? vcat(counts, zeros(eltype(cl.counts.words), n_missing)) : counts
 end
@@ -93,12 +134,20 @@ end
 Base.getindex(cl::CountsLayer, i::Integer) = assemble_count_vector(cl, i)
 
 function find_shared_words(cl::CountsLayer)
-    seen = Set{UInt32}()
-    shared = Set{UInt32}()
+
+    # After collapse!, k-mers with identical count vectors point to the same PackedArray
+    # word IDs. push! must not append to a shared word or it would corrupt every other
+    # k-mer that references it. Identify all word IDs referenced more than once.
+    #
+    # Use a count array indexed by word ID: O(words) space, much smaller than a Set over
+    # all flat_cids when words >> unique k-mers (e.g. before collapse, 4 bytes per word
+    # vs ~50 bytes per k-mer for the old Set{UInt32} approach).
+    n_words = length(cl.counts.words)
+    ref_counts = zeros(UInt8, n_words)  # UInt8: saturate at 2, we only need ≤ 2
     for cid in cl.flat_cids
-        cid in seen ? push!(shared, cid) : push!(seen, cid)
+        @inbounds ref_counts[cid] < 2 && (ref_counts[cid] += UInt8(1))
     end
-    return shared
+    return Set{UInt32}(i for i in eachindex(ref_counts) if ref_counts[i] > 1)
 end
 
 function _kmer_offsets(n_cids::Vector{UInt16})::Vector{UInt64}
@@ -124,6 +173,21 @@ end
 
 const INTERGENIC_MASK = UInt64(1)  # bit 0 reserved for intergenic
 
+"""
+    BiotypLayer <: AbstractLayer
+
+Per-k-mer biotype annotation stored as interned bitmasks.
+
+Each bit position corresponds to one biotype in `biotype_names`: bit `b-1` set
+means the k-mer originates from `biotype_names[b]`. Bitmasks are deduplicated
+into a `pool` so `ids` stores only a `UInt16` index per k-mer. `pool[1]` is
+always `INTERGENIC_MASK` (bit 0 only); k-mers with no annotation default to it.
+
+# Fields
+- `ids`: one pool index per k-mer (1-based into `pool`)
+- `pool`: deduplicated bitmasks; `pool[1] == INTERGENIC_MASK`
+- `biotype_names`: human-readable name per bit position (`biotype_names[b]` ↔ bit `b-1`)
+"""
 struct BiotypLayer <: AbstractLayer
     ids::Vector{UInt16}    # one per k-mer, index into pool (1-based)
     pool::Vector{UInt64}   # deduplicated biotype bitmasks; pool[1] always == INTERGENIC_MASK
@@ -159,6 +223,30 @@ end
 
 ## KCT Wrapper ##
 
+"""
+    KCT{K, Ab, Counts, Biotype, C, D}
+
+K-mer Count Table. Top-level container combining a sorted k-mer store with
+optional per-sample count and biotype-annotation layers.
+
+The table is always keyed by a `KmerLayer` storing k-mers in sorted order with
+O(log n) prefix-indexed lookup. `Counts` and `Biotype` are either the
+corresponding layer type or `Nothing`, letting the compiler dispatch to
+specialised `getindex` and `collapse!` methods with no runtime overhead.
+
+# Type Parameters
+- `K`: k-mer length in amino-acid symbols
+- `Ab`: alphabet type (e.g. `AAAlphabet`)
+- `Counts`: `CountsLayer` when count data is present, `Nothing` otherwise
+- `Biotype`: `BiotypLayer` when biotype data is present, `Nothing` otherwise
+- `C`: checkpoint word type forwarded to the underlying `KmerLayer`
+- `D`: delta word type forwarded to the underlying `KmerLayer`
+
+# Fields
+- `kmer`: sorted k-mer store
+- `counts`: per-sample count layer, or `nothing`
+- `biotype`: per-k-mer biotype annotation layer, or `nothing`
+"""
 struct KCT{K, Ab <: Alphabet, Counts <: Union{CountsLayer, Nothing}, Biotype <: Union{BiotypLayer, Nothing}, C <: Unsigned, D <: Unsigned}
     kmer::KmerLayer{K, Ab, C, D}
     counts::Counts
@@ -222,12 +310,17 @@ function KCT{K, Ab}(sample_hashtable::Dict{UInt64, UInt32};
     tmp_seqs = Vector{UInt64}(undef, length(sample_hashtable))
     sizehint!(cl.flat_cids, length(sample_hashtable))
     sizehint!(cl.n_cids, length(sample_hashtable))
+
+    # Pack each count into its own fresh word (one k-mer per word at this stage).
+    # k-mers arrive in hash-table order, so store sequences in a temporary array for sorting.
     @showprogress desc="Parsing Hash-Table into KCT..." for (j, (k_bits, count)) in enumerate(sample_hashtable)
         push!(cl.counts, UInt64(count))
         tmp_seqs[j] = k_bits
         push!(cl.flat_cids, UInt32(lastindex(cl.counts)))
         push!(cl.n_cids, UInt16(1))
     end
+
+    # Sort k-mers and permute the CSR arrays to restore sorted order.
     perm = psortperm(tmp_seqs)
     new_flat = similar(cl.flat_cids); new_n_cids = similar(cl.n_cids)
     for (j, i) in enumerate(perm)
@@ -246,8 +339,14 @@ end
 
 function _push_new_kmer_counts!(cl::CountsLayer, count::UInt32)
     W = eltype(cl.counts.words)
+
+    # Allocate a fresh word chain isolated from all existing k-mers.
     wid = new_word!(cl.counts)
     chunk_ids = UInt32[wid]
+
+    # Backfill one zero per prior sample: this k-mer was absent from all of them.
+    # When a word fills up, push! spills to a new word; track each new word ID,
+    # as every word referenced by a k-mer must appear in its flat_cids entry.
     @inbounds for _ in 1:cl.samples.x
         push!(cl.counts, W(0), wid)
         if lastindex(cl.counts) != wid
@@ -255,6 +354,8 @@ function _push_new_kmer_counts!(cl::CountsLayer, count::UInt32)
             push!(chunk_ids, UInt32(wid))
         end
     end
+
+    # Append the actual count for the current sample.
     push!(cl.counts, W(count & typemax(W)), wid)
     lastindex(cl.counts) != wid && push!(chunk_ids, UInt32(lastindex(cl.counts)))
     return chunk_ids
@@ -266,40 +367,49 @@ function _push_existing_kmer_counts!(cl::CountsLayer, ext_buf::Dict{Int, Vector{
     W = eltype(cl.counts.words)
     cur_cids = @view cl.flat_cids[offsets[k_pos] : offsets[k_pos+1]-1]
     last_wid = Int(cur_cids[end])
+
+    # Total count slots stored across all words for this k-mer so far.
     total_stored = sum(length(cl.counts[Int(c)]) for c in cur_cids)
+
+    # Trailing zeros for samples where the k-mer was absent are stored implicitly.
+    # Now that a new count is being added they are no longer trailing, so they must
+    # be materialised before the actual count can be appended.
     missing_counts = cl.samples.x - total_stored
-    ext = get!(ext_buf, k_pos, UInt32[])
 
     if last_wid in shared_words
-        if missing_counts > 0
-            push!(cl.counts, W(0))
-            new_wid = lastindex(cl.counts)
-            push!(ext, UInt32(new_wid))
-            for _ in 2:missing_counts
-                push!(cl.counts, W(0), new_wid)
-                next_wid = lastindex(cl.counts)
-                if next_wid != new_wid
-                    push!(ext, UInt32(next_wid)); new_wid = next_wid
-                end
+
+        # The last word is shared with at least one other k-mer: appending in place
+        # would corrupt that k-mer's data. Start a fresh, unshared word chain instead.
+        # We always produce at least one new word here, so eagerly create the ext entry.
+        ext = get!(ext_buf, k_pos, UInt32[])
+        new_wid = new_word!(cl.counts)
+        push!(ext, UInt32(new_wid))
+        for _ in 1:missing_counts
+            push!(cl.counts, W(0), new_wid)
+            next_wid = lastindex(cl.counts)
+            if next_wid != new_wid
+                push!(ext, UInt32(next_wid)); new_wid = next_wid
             end
-            push!(cl.counts, W(count & typemax(W)), new_wid)
-            word_id = lastindex(cl.counts)
-            word_id != new_wid && push!(ext, UInt32(word_id))
-        else
-            push!(cl.counts, W(count & typemax(W)))
-            push!(ext, UInt32(lastindex(cl.counts)))
         end
+        push!(cl.counts, W(count & typemax(W)), new_wid)
+        word_id = lastindex(cl.counts)
+        word_id != new_wid && push!(ext, UInt32(word_id))
     else
+
+        # Last word is unshared: safe to append directly to it.
+        # Only touch ext_buf on actual overflow or backfill overflow — the common path
+        # (missing_counts == 0 and count fits in the current word) allocates nothing.
         for _ in 1:missing_counts
             push!(cl.counts, W(0), last_wid)
             new_wid = lastindex(cl.counts)
             if last_wid != new_wid
-                push!(ext, UInt32(new_wid)); last_wid = new_wid
+                push!(get!(ext_buf, k_pos, UInt32[]), UInt32(new_wid))
+                last_wid = new_wid
             end
         end
         push!(cl.counts, W(count & typemax(W)), last_wid)
         word_id = lastindex(cl.counts)
-        last_wid != word_id && push!(ext, UInt32(word_id))
+        last_wid != word_id && push!(get!(ext_buf, k_pos, UInt32[]), UInt32(word_id))
     end
 end
 
@@ -308,6 +418,8 @@ function _merge_and_sort!(kl::KmerLayer, cl::CountsLayer, bl::Union{BiotypLayer,
                            new_cids::Vector{Vector{UInt32}}, offsets::Vector{UInt64})
     old_seqs = collect(kl.seqs)
     n_existing = length(old_seqs)
+
+    # Merge existing and brand-new k-mer sequences, then sort to restore the invariant.
     all_seqs = vcat(old_seqs, new_seqs)
     perm = psortperm(all_seqs)
 
@@ -318,13 +430,18 @@ function _merge_and_sort!(kl::KmerLayer, cl::CountsLayer, bl::Union{BiotypLayer,
     sizehint!(new_n_cids, length(all_seqs))
     new_ids = isnothing(bl) ? nothing : Vector{UInt16}(undef, length(all_seqs))
 
+    # Walk k-mers in sorted order, rebuilding flat_cids and n_cids in one pass.
     for (j, i) in enumerate(perm)
         cids_start = length(new_flat)
         if i <= n_existing
+
+            # Existing k-mer: copy its original cid block, then any extensions from ext_buf.
             append!(new_flat, @view cl.flat_cids[offsets[i] : offsets[i+1]-1])
             haskey(ext_buf, i) && append!(new_flat, ext_buf[i])
             !isnothing(new_ids) && (new_ids[j] = bl.ids[i])
         else
+
+            # Brand-new k-mer: use the word-ID list built by _push_new_kmer_counts!.
             append!(new_flat, new_cids[i - n_existing])
             !isnothing(new_ids) && (new_ids[j] = UInt16(1))  # intergenic for new k-mers
         end
@@ -345,11 +462,13 @@ end
 function Base.push!(kct::KCT{K, Ab, CountsLayer, Biotype},
                     sample_hashtable::Dict{UInt64, UInt32}) where {K, Ab<:Alphabet, Biotype}
     cl = kct.counts
+
+    # Snapshot shared words and CSR offsets before the loop: both change as we append.
     shared_words = find_shared_words(cl)
     offsets = _kmer_offsets(cl.n_cids)
-    ext_buf = Dict{Int, Vector{UInt32}}()
-    new_seqs = UInt64[]
-    new_cids = Vector{UInt32}[]
+    ext_buf = Dict{Int, Vector{UInt32}}()  # new word-ID extensions for existing k-mers
+    new_seqs = UInt64[]                    # bit-encodings of brand-new k-mers
+    new_cids = Vector{UInt32}[]            # their word-ID lists
 
     @showprogress desc="Adding Sample $(cl.samples.x + 1) to Table..." for (k_bits, count) in sample_hashtable
         k_pos = findfirst(kct.kmer, Kmer{Ab, K, 1}(Kmers.unsafe, (k_bits,)))
@@ -361,6 +480,7 @@ function Base.push!(kct::KCT{K, Ab, CountsLayer, Biotype},
         end
     end
 
+    # Merge new k-mers into the sorted sequence array and rebuild the CSR structure.
     _merge_and_sort!(kct.kmer, cl, kct.biotype, ext_buf, new_seqs, new_cids, offsets)
     compute_index!(kct.kmer)
     cl.samples.x += 1
@@ -372,6 +492,7 @@ function Base.sort!(kct::KCT{K, Ab, CountsLayer, Biotype}) where {K, Ab, Biotype
     perm = psortperm(seqs)
     encode!(kct.kmer.seqs, seqs[perm])
 
+    # Permute flat_cids and n_cids to match the new k-mer order.
     cl = kct.counts
     offsets = _kmer_offsets(cl.n_cids)
     new_flat = UInt32[]; sizehint!(new_flat, length(cl.flat_cids))
@@ -427,6 +548,8 @@ function add_biotypes(kct::KCT{K, Ab, CountsLayer, Nothing, C, D},
     gidx_iter = iterate(gidx.kmer.seqs)
     i = 1; j = 1
 
+    # O(n + m) sorted merge walk: advance the smaller pointer each step,
+    # assign a biotype mask only on exact k-mer match.
     while !isnothing(kct_iter) && !isnothing(gidx_iter)
         kct_val, kct_state = kct_iter
         gidx_val, gidx_state = gidx_iter
@@ -450,6 +573,7 @@ function add_biotypes(kct::KCT{K, Ab, CountsLayer, Nothing, C, D},
     return KCT(kct.kmer, kct.counts, BiotypLayer(ids, pool, gidx.biotype.biotype_names))
 end
 
+include("JelloFish.jl")
 include("GenomicIndexBuilder.jl")
 include("KCTBenchmarker.jl")
 
