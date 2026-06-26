@@ -56,7 +56,7 @@ end
 KmerLayer{K, Ab}(; checkpoint_size::Type{C}=UInt64,
                    delta_size::Type{D}=UInt32) where {K, Ab<:Alphabet, C<:Unsigned, D<:Unsigned} =
     KmerLayer{K, Ab, C, D}(DeltaArray{checkpoint_size, delta_size}(DEFAULT_CHECKPOINT_INTERVAL),
-                            Ref(20) => fill(0:-1, 4^15))
+                            Ref(20) => fill(0:-1, 1 << max(0, (K - 4) * bits_per_symbol(Ab()))))
 
 function Base.findfirst(kl::KmerLayer{K, Ab}, key::Kmer{Ab, K}) where {K, Ab<:Alphabet}
     key_bits = key.data[1]
@@ -529,7 +529,7 @@ function KCT{K, Ab}(sorted_kmers::Vector{UInt64}, bitmasks::Vector{UInt64},
         ids[i] = _intern_mask!(pool, index_map, mask)
     end
     kl = KmerLayer{K, Ab, C, D}(DeltaArray{checkpoint_size, delta_size}(sorted_kmers, DEFAULT_CHECKPOINT_INTERVAL),
-                                  Ref(20) => fill(0:-1, 4^15))
+                                  Ref(20) => fill(0:-1, 1 << max(0, (K - 4) * bits_per_symbol(Ab()))))
     kct = KCT(kl, BiotypLayer(ids, pool, biotype_names))
     compute_index!(kct.kmer)
     return kct
@@ -599,6 +599,3 @@ function build_kct(samples::AbstractVector{String}, K::Int=30, chunks::Int=500_0
 end
 
 include("KCTLoader.jl")
-
-# temporary path to quickly test on all samples
-samples = readlines(open("/u/jacquinn/phd_stuff/data/tcga_fastqs.paths", "r"));

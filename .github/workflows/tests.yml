@@ -1,0 +1,34 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+
+      - uses: julia-actions/cache@v2
+
+      # LabRegistry is a private registry in the lemieux-lab org.
+      # NArrays and other lab packages are resolved through it.
+      # Both repos must be accessible (public, or a PAT stored as LABREGISTRY_TOKEN).
+      - name: Add LabRegistry
+        run: |
+          julia --project=. -e '
+            using Pkg
+            Pkg.Registry.add(RegistrySpec(url="https://github.com/lemieux-lab/LabRegistry.git"))
+          '
+
+      - name: Instantiate
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run tests
+        run: julia --project=. test/runtests.jl
