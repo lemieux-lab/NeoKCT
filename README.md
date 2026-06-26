@@ -60,7 +60,7 @@ Each sample is processed into a k-mer count hash table, then merged into a singl
   ![](Figures/Project_Figures_4.svg)
 - **Delta-encoded k-mer sequences** (`DeltaArray`): sorted k-mer bit-patterns stored as delta-encoded integers (UInt64 values, UInt32 deltas by default), roughly halving sequence storage. Periodic checkpoints bound random access to O(checkpoint interval); sequential iteration is O(1) amortized. Overflow deltas are transparently promoted to checkpoints. Both the checkpoint type `C` and delta type `D` are type parameters, allowing compact alternatives for small tables.
   
-  `PackedArray` and `DeltaArray` are provided by the `NArrays` package.
+  `PackedArray` and `DeltaArray` are provided by the [`NArrays`](https://github.com/lemieux-lab/NArrays) package (originally developped for this project).
 
   ![](Figures/Project_Figures_5.svg)
 - **Layered architecture**: a `KCT{K, Ab, Counts, Biotype, C, D}` is a wrapper combining up to three independent layers. `KmerLayer` holds the sorted k-mer sequences and prefix index; `CountsLayer` holds the CSR count table; `BiotypLayer` holds the deduplicated biotype bitmask pool. Layers can be added or omitted independently, unifying `NeoKCT`, `RichKCT`, and `GenomicIndex` into a single type. Cross-layer operations (`push!`, `add_biotypes`, `collapse!`) are defined at the `KCT` level.
