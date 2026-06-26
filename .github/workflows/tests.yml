@@ -17,13 +17,15 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      # LabRegistry is a private registry in the lemieux-lab org.
-      # NArrays and other lab packages are resolved through it.
-      # Both repos must be accessible (public, or a PAT stored as LABREGISTRY_TOKEN).
-      - name: Add LabRegistry
+      # Add registries before instantiating. General must be explicit because
+      # Julia adds it lazily and it may not be present when Pkg.instantiate() runs.
+      # LabRegistry resolves NArrays and other lab packages; both repos must be
+      # public, or a PAT stored as LABREGISTRY_TOKEN must be used.
+      - name: Add registries
         run: |
-          julia --project=. -e '
+          julia -e '
             using Pkg
+            Pkg.Registry.add("General")
             Pkg.Registry.add(RegistrySpec(url="https://github.com/lemieux-lab/LabRegistry.git"))
           '
 
