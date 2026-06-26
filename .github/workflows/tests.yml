@@ -32,5 +32,4 @@ jobs:
       - name: Instantiate
         run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Run tests
-        run: julia --project=. test/runtests.jl
+      - uses: julia-actions/julia-runtest@v1
