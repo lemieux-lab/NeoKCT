@@ -4,7 +4,10 @@ using BioSymbols
 using ProgressMeter
 using Base.Threads
 using NArrays
+import NArrays: repack
+export repack
 using Dates
+using BitIntegers
 
 abstract type AbstractLayer end
 
@@ -121,9 +124,15 @@ CountsLayer(; word_size::Type{<:Unsigned}=UInt128) =
     CountsLayer(UInt16[], UInt32[], PackedArray{UInt32, word_size}(), Ref(0))
 
 function assemble_count_vector(cl::CountsLayer, i::Integer)
+    # lo re-sums every preceding n_cids on each call - O(i) per call, so a loop reading
+    # every k-mer (e.g. kct[1:end]) is O(n^2). Fine for spot lookups; would need cached
+    # offsets (see _kmer_offsets) if bulk reads become a bottleneck.
     lo = 1 + Int64(sum(@view cl.n_cids[1:i-1]))
     cids = @view cl.flat_cids[lo : lo + cl.n_cids[i] - 1]
-    counts = reduce(vcat, [cl.counts[Int(c)] for c in cids])
+    counts = UInt32[]
+    for c in cids
+        append!(counts, cl.counts[Int(c)])
+    end
 
     # Trailing zeros (samples where this k-mer was absent) are stored implicitly to save space.
     # Materialise them only when reading, by padding to the full sample count.
@@ -167,6 +176,76 @@ function collapse!(cl::CountsLayer)
     end
     printstyled("Collapse done\n", color=:green)
     return CountsLayer(cl.n_cids, new_flat, deduped, cl.samples)
+end
+
+# Rebuilds cl.counts with word type W2, preserving old word boundaries (a word is only
+# split if its own values no longer fit under W2). Cheap, but a larger W2 can't shrink
+# flat_cids since old words are never merged together.
+function _repack_split(cl::CountsLayer, ::Type{W2}) where {W2<:Unsigned}
+    new_counts, id_map = repack(cl.counts, W2)
+
+    offsets = _kmer_offsets(cl.n_cids)
+    new_flat = UInt32[]
+    sizehint!(new_flat, length(cl.flat_cids))
+    new_n_cids = similar(cl.n_cids)
+
+    @showprogress "Rewriting Count IDs..." for i in eachindex(cl.n_cids)
+        lo, hi = offsets[i], offsets[i+1] - 1
+        start = length(new_flat)
+        for cid in @view cl.flat_cids[lo:hi]
+            append!(new_flat, id_map[cid])
+        end
+        new_n_cids[i] = UInt16(length(new_flat) - start)
+    end
+
+    return CountsLayer(new_n_cids, new_flat, new_counts, Ref(cl.samples.x))
+end
+
+# Rebuilds cl.counts with word type W2 by repacking each k-mer's own values from
+# scratch into as few W2 words as possible, ignoring old word boundaries. Unlike
+# _repack_split, this lets a larger W2 shrink flat_cids. It also breaks any
+# word-sharing from a prior collapse! (identical count vectors now live in separate
+# fresh words), which is why repack() re-collapses by default when merge=true.
+function _repack_merge(cl::CountsLayer, ::Type{W2}) where {W2<:Unsigned}
+    new_counts = PackedArray{UInt32, W2}()
+    new_flat = UInt32[]
+    new_n_cids = similar(cl.n_cids)
+    offsets = _kmer_offsets(cl.n_cids)
+
+    @showprogress "Repacking Counts Words (merging)..." for i in eachindex(cl.n_cids)
+        lo, hi = offsets[i], offsets[i+1] - 1
+        # append! is amortized O(1) per element; reduce(vcat, ...) here would recopy
+        # everything gathered so far at each step, O(m^2) in the k-mer's own word count m.
+        vals = UInt32[]
+        for c in @view cl.flat_cids[lo:hi]
+            append!(vals, cl.counts[Int(c)])
+        end
+        start = length(new_flat)
+        if !isempty(vals)
+            wid = new_word!(new_counts)
+            push!(new_flat, UInt32(wid))
+            for v in vals
+                push!(new_counts, v, wid)
+                if lastindex(new_counts) != wid
+                    wid = lastindex(new_counts)
+                    push!(new_flat, UInt32(wid))
+                end
+            end
+        end
+        new_n_cids[i] = UInt16(length(new_flat) - start)
+    end
+
+    return CountsLayer(new_n_cids, new_flat, new_counts, Ref(cl.samples.x))
+end
+
+# Lets word size be swept without re-parsing samples. `merge=true` consolidates each
+# k-mer's values into as few new words as possible (shows the real benefit of a larger
+# W2); `merge=false` (default) only splits words that overflow under W2, which is
+# cheaper but can't shrink flat_cids. `collapse` re-dedupes afterwards and defaults to
+# matching `merge`, since merging discards prior word-sharing from collapse!.
+function repack(cl::CountsLayer, ::Type{W2}; merge::Bool=false, collapse::Bool=merge) where {W2<:Unsigned}
+    new_cl = merge ? _repack_merge(cl, W2) : _repack_split(cl, W2)
+    return collapse ? collapse!(new_cl) : new_cl
 end
 
 ## Biotype Layer ##
@@ -298,6 +377,14 @@ end
 function collapse!(kct::KCT{K, Ab, CountsLayer, BiotypLayer}) where {K, Ab}
     return KCT(kct.kmer, collapse!(kct.counts), kct.biotype)
 end
+
+# Rebuilds the whole table's counts under a new word size, e.g. to benchmark
+# word sizes on an already-built KCT without re-parsing the original samples.
+repack(kct::KCT{K, Ab, CountsLayer, Nothing}, ::Type{W2}; merge::Bool=false, collapse::Bool=merge) where {K, Ab, W2<:Unsigned} =
+    KCT(kct.kmer, repack(kct.counts, W2; merge, collapse))
+
+repack(kct::KCT{K, Ab, CountsLayer, BiotypLayer}, ::Type{W2}; merge::Bool=false, collapse::Bool=merge) where {K, Ab, W2<:Unsigned} =
+    KCT(kct.kmer, repack(kct.counts, W2; merge, collapse), kct.biotype)
 
 ## KCT Sample Building ##
 
@@ -574,6 +661,7 @@ function add_biotypes(kct::KCT{K, Ab, CountsLayer, Nothing, C, D},
 end
 
 include("JelloFish.jl")
+include("JellyfishDump.jl")
 include("GenomicIndexBuilder.jl")
 include("KCTBenchmarker.jl")
 

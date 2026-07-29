@@ -1,4 +1,8 @@
 make_kcts.jl
 build_kct_tcga.sh
 incremental_kct_step.jl
+build_aetsa_peptide_table.jl
+build_kct_gtex.sh
+incremental_kct_step_gtex.jl
+gen_gtex_samples.sh
 benchmarks/
