@@ -224,10 +224,11 @@ function _repack_merge(cl::CountsLayer, ::Type{W2}) where {W2<:Unsigned}
         if !isempty(vals)
             wid = new_word!(new_counts)
             push!(new_flat, UInt32(wid))
+            last_set = 0
             for v in vals
-                push!(new_counts, v, wid)
-                if lastindex(new_counts) != wid
-                    wid = lastindex(new_counts)
+                new_wid, last_set = push_at!(new_counts, v, wid, last_set)
+                if new_wid != wid
+                    wid = new_wid
                     push!(new_flat, UInt32(wid))
                 end
             end
