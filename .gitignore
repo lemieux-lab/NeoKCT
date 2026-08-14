@@ -5,4 +5,7 @@ build_aetsa_peptide_table.jl
 build_kct_gtex.sh
 incremental_kct_step_gtex.jl
 gen_gtex_samples.sh
+build_kct_gtex_cram.jl
+build_kct_gtex_cram.sh
+gen_gtex_cram_samples.sh
 benchmarks/

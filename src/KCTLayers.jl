@@ -432,20 +432,21 @@ function _push_new_kmer_counts!(cl::CountsLayer, count::UInt32)
     wid = new_word!(cl.counts)
     chunk_ids = UInt32[wid]
 
-    # Backfill one zero per prior sample: this k-mer was absent from all of them.
-    # When a word fills up, push! spills to a new word; track each new word ID,
-    # as every word referenced by a k-mer must appear in its flat_cids entry.
+    # Backfill one zero per prior sample, this k-mer was absent from all of them.
+    # When a word fills up, push_to! spills to a new word and reports which word it
+    # actually wrote to; track each new word ID, as every word referenced by a k-mer
+    # must appear in its flat_cids entry.
     @inbounds for _ in 1:cl.samples.x
-        push!(cl.counts, W(0), wid)
-        if lastindex(cl.counts) != wid
-            wid = lastindex(cl.counts)
+        new_wid = push_to!(cl.counts, W(0), wid)
+        if new_wid != wid
+            wid = new_wid
             push!(chunk_ids, UInt32(wid))
         end
     end
 
     # Append the actual count for the current sample.
-    push!(cl.counts, W(count & typemax(W)), wid)
-    lastindex(cl.counts) != wid && push!(chunk_ids, UInt32(lastindex(cl.counts)))
+    new_wid = push_to!(cl.counts, W(count & typemax(W)), wid)
+    new_wid != wid && push!(chunk_ids, UInt32(new_wid))
     return chunk_ids
 end
 
@@ -473,30 +474,29 @@ function _push_existing_kmer_counts!(cl::CountsLayer, ext_buf::Dict{Int, Vector{
         new_wid = new_word!(cl.counts)
         push!(ext, UInt32(new_wid))
         for _ in 1:missing_counts
-            push!(cl.counts, W(0), new_wid)
-            next_wid = lastindex(cl.counts)
+            next_wid = push_to!(cl.counts, W(0), new_wid)
             if next_wid != new_wid
                 push!(ext, UInt32(next_wid)); new_wid = next_wid
             end
         end
-        push!(cl.counts, W(count & typemax(W)), new_wid)
-        word_id = lastindex(cl.counts)
+        word_id = push_to!(cl.counts, W(count & typemax(W)), new_wid)
         word_id != new_wid && push!(ext, UInt32(word_id))
     else
 
-        # Last word is unshared: safe to append directly to it.
-        # Only touch ext_buf on actual overflow or backfill overflow — the common path
+        # Last word is unshared then safe to append directly to it.
+        # Only touch ext_buf on actual overflow or backfill overflow, the common path
         # (missing_counts == 0 and count fits in the current word) allocates nothing.
+        # push_to! reports the word it actually wrote to directly, last_wid is in general
+        # not the array's last word, so lastindex(cl.counts) can't be used to detect
+        # overflow here (see push_to!'s docstring).
         for _ in 1:missing_counts
-            push!(cl.counts, W(0), last_wid)
-            new_wid = lastindex(cl.counts)
+            new_wid = push_to!(cl.counts, W(0), last_wid)
             if last_wid != new_wid
                 push!(get!(ext_buf, k_pos, UInt32[]), UInt32(new_wid))
                 last_wid = new_wid
             end
         end
-        push!(cl.counts, W(count & typemax(W)), last_wid)
-        word_id = lastindex(cl.counts)
+        word_id = push_to!(cl.counts, W(count & typemax(W)), last_wid)
         last_wid != word_id && push!(get!(ext_buf, k_pos, UInt32[]), UInt32(word_id))
     end
 end
@@ -506,41 +506,52 @@ function _merge_and_sort!(kl::KmerLayer, cl::CountsLayer, bl::Union{BiotypLayer,
                            new_cids::Vector{Vector{UInt32}}, offsets::Vector{UInt64})
     old_seqs = collect(kl.seqs)
     n_existing = length(old_seqs)
+    n_new = length(new_seqs)
+    n_total = n_existing + n_new
 
-    # Merge existing and brand-new k-mer sequences, then sort to restore the invariant.
-    all_seqs = vcat(old_seqs, new_seqs)
-    perm = psortperm(all_seqs)
+    # old_seqs is already sorted (KmerLayer invariant), and no new k-mer can equal an
+    # existing one (findfirst would have matched it in push!). So instead of re-sorting
+    # everything from scratch (O(T log T) in the whole table size T), only sort the small
+    # new batch (O(m log m)) and merge the two disjoint sorted runs in one O(T + m) pass.
+    new_perm = psortperm(new_seqs)
 
+    merged_seqs = Vector{UInt64}(undef, n_total)
     new_flat = UInt32[]
     sizehint!(new_flat, length(cl.flat_cids) + sum(length, values(ext_buf); init=0) +
                         sum(length, new_cids; init=0))
-    new_n_cids = UInt16[]
-    sizehint!(new_n_cids, length(all_seqs))
-    new_ids = isnothing(bl) ? nothing : Vector{UInt16}(undef, length(all_seqs))
+    new_n_cids = Vector{UInt16}(undef, n_total)
+    new_ids = isnothing(bl) ? nothing : Vector{UInt16}(undef, n_total)
 
-    # Walk k-mers in sorted order, rebuilding flat_cids and n_cids in one pass.
-    for (j, i) in enumerate(perm)
+    # Walk both sorted runs in lockstep, rebuilding flat_cids and n_cids in one pass.
+    oi = 1  # pointer into old_seqs
+    ni = 1  # pointer into new_perm (i.e. into new_seqs, in sorted order)
+    for j in 1:n_total
         cids_start = length(new_flat)
-        if i <= n_existing
+        if ni > n_new || (oi <= n_existing && old_seqs[oi] < new_seqs[new_perm[ni]])
 
             # Existing k-mer: copy its original cid block, then any extensions from ext_buf.
-            append!(new_flat, @view cl.flat_cids[offsets[i] : offsets[i+1]-1])
-            haskey(ext_buf, i) && append!(new_flat, ext_buf[i])
-            !isnothing(new_ids) && (new_ids[j] = bl.ids[i])
+            merged_seqs[j] = old_seqs[oi]
+            append!(new_flat, @view cl.flat_cids[offsets[oi] : offsets[oi+1]-1])
+            haskey(ext_buf, oi) && append!(new_flat, ext_buf[oi])
+            !isnothing(new_ids) && (new_ids[j] = bl.ids[oi])
+            oi += 1
         else
 
             # Brand-new k-mer: use the word-ID list built by _push_new_kmer_counts!.
-            append!(new_flat, new_cids[i - n_existing])
+            i = new_perm[ni]
+            merged_seqs[j] = new_seqs[i]
+            append!(new_flat, new_cids[i])
             !isnothing(new_ids) && (new_ids[j] = UInt16(1))  # intergenic for new k-mers
+            ni += 1
         end
-        push!(new_n_cids, UInt16(length(new_flat) - cids_start))
+        new_n_cids[j] = UInt16(length(new_flat) - cids_start)
     end
 
     if !isnothing(bl)
-        resize!(bl.ids, length(all_seqs))
+        resize!(bl.ids, n_total)
         copyto!(bl.ids, new_ids)
     end
-    encode!(kl.seqs, all_seqs[perm])
+    encode!(kl.seqs, merged_seqs)
     resize!(cl.flat_cids, length(new_flat)); copyto!(cl.flat_cids, new_flat)
     resize!(cl.n_cids, length(new_n_cids)); copyto!(cl.n_cids, new_n_cids)
 end
