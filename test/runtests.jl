@@ -85,9 +85,9 @@ end
 
   @testset "3. KCT single-sample build and lookup" begin
     raw = Dict{UInt64, UInt32}(
-      UInt64(100)  => UInt32(3),
-      UInt64(200)  => UInt32(7),
-      UInt64(500)  => UInt32(1),
+      UInt64(100) => UInt32(3),
+      UInt64(200) => UInt32(7),
+      UInt64(500) => UInt32(1),
       UInt64(1000) => UInt32(9),
     )
     kct = KCT{4, AAAlphabet}(raw)
@@ -280,6 +280,180 @@ end
         @test length(kct) == 2
       finally
         isfile(path) && rm(path)
+      end
+    end
+  end
+
+  # Full count vector for k-mer `x` across `samples`, padded with zeros for absences.
+  # This is exactly what kct.counts[pos] must return once all samples are in the table.
+  _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
+
+  @testset "8. Batched push! == sequential single push!" begin
+    s1 = Dict{UInt64, UInt32}(0x11 => 3, 0x22 => 5, 0x33 => 1)
+    s2 = Dict{UInt64, UInt32}(0x11 => 4, 0x44 => 2, 0x55 => 9)
+    s3 = Dict{UInt64, UInt32}(0x11 => 2, 0x22 => 7, 0x44 => 6, 0x66 => 8)
+    s4 = Dict{UInt64, UInt32}(0x11 => 1, 0x66 => 5, 0x77 => 4)
+    samples = (s1, s2, s3, s4)
+    allk = sort(collect(UInt64, union(keys.(samples)...)))
+
+    # Sequential: one push! per sample, collapse! between (mirrors the build drivers).
+    seq = KCT{4, AAAlphabet}(deepcopy(s1))
+    for s in (s2, s3, s4)
+      push!(seq, deepcopy(s))
+      seq = collapse!(seq)
+    end
+
+    # Batched: sample 1 builds the table, the rest go in as one batch.
+    bat = KCT{4, AAAlphabet}(deepcopy(s1))
+    push!(bat, [deepcopy(s2), deepcopy(s3), deepcopy(s4)])
+    bat = collapse!(bat)
+
+    @test bat.counts.samples[] == 4
+    @test seq.counts.samples[] == 4
+    @test length(bat) == length(allk) == 7
+    @test collect(bat.kmer.seqs) == collect(seq.kmer.seqs) == allk
+
+    for x in allk
+      want = _expected_cv(samples, x)
+      @test bat.counts[findfirst(bat.kmer, x)] == want
+      @test seq.counts[findfirst(seq.kmer, x)] == want
+    end
+  end
+
+  @testset "9. Batched push! edge cases (gaps, mid-batch new, last-sample new)" begin
+    # base has one k-mer. The batch exercises: embedded zero (0xA1 in b1 & b3, not b2),
+    # trailing implicit zero (0xA2 in b1 only), leading backfill (0xB0 in b2 only),
+    # brand-new mid-batch then seen again (0xC0 in b2 & b3), brand-new in the last
+    # batch sample only (0xD0 in b3).
+    base = Dict{UInt64, UInt32}(0xA1 => 2, 0xA2 => 9)
+    b1 = Dict{UInt64, UInt32}(0xA1 => 5)
+    b2 = Dict{UInt64, UInt32}(0xB0 => 4, 0xC0 => 7)
+    b3 = Dict{UInt64, UInt32}(0xA1 => 6, 0xC0 => 1, 0xD0 => 8)
+    all_samples = (base, b1, b2, b3)
+
+    kct = KCT{4, AAAlphabet}(deepcopy(base))
+    push!(kct, [deepcopy(b1), deepcopy(b2), deepcopy(b3)])
+    kct = collapse!(kct)
+
+    @test kct.counts.samples[] == 4
+    allk = sort(collect(UInt64, union(keys.(all_samples)...)))
+    @test collect(kct.kmer.seqs) == allk
+
+    for x in allk
+      @test kct.counts[findfirst(kct.kmer, x)] == _expected_cv(all_samples, x)
+    end
+
+    # spot-check the tricky vectors explicitly
+    @test kct.counts[findfirst(kct.kmer, UInt64(0xA1))] == UInt32[2, 5, 0, 6]
+    @test kct.counts[findfirst(kct.kmer, UInt64(0xA2))] == UInt32[9, 0, 0, 0]
+    @test kct.counts[findfirst(kct.kmer, UInt64(0xB0))] == UInt32[0, 0, 4, 0]
+    @test kct.counts[findfirst(kct.kmer, UInt64(0xC0))] == UInt32[0, 0, 7, 1]
+    @test kct.counts[findfirst(kct.kmer, UInt64(0xD0))] == UInt32[0, 0, 0, 8]
+  end
+
+  @testset "10. Streaming builder (V4.0 SparseCountsLayer)" begin
+    # K=12 nucleotides -> 4 AA symbols -> 20-bit encoding. shard_bits=2 (keep_shift=18)
+    # spreads these k-mers across all 4 prefix shards.
+    K1 = UInt64(0x00100); K2 = UInt64(0x02000); K3 = UInt64(0x40001)
+    K4 = UInt64(0x80005); K5 = UInt64(0xC0002); K6 = UInt64(0x40ABC)
+    S = [
+      Dict{UInt64, UInt32}(K1 => 3, K2 => 5, K3 => 1),
+      Dict{UInt64, UInt32}(K1 => 3, K4 => 2, K3 => 1),
+      Dict{UInt64, UInt32}(K1 => 2, K2 => 7, K4 => 6, K5 => 8),
+      Dict{UInt64, UInt32}(K3 => 4, K6 => 9),
+      Dict{UInt64, UInt32}(K5 => 5, K6 => 9),
+      Dict{UInt64, UInt32}(K1 => 1, K2 => 5),
+    ]
+    allk = sort([K1, K2, K3, K4, K5, K6])
+    paths = ["s$i" for i in eachindex(S)]
+    cmap = Dict(paths[i] => S[i] for i in eachindex(S))
+    mkcounter(m) = (p -> deepcopy(m[p]))
+
+    stream_build(; kw...) = mktempdir() do tmp
+      mktempdir() do out
+        outp = build_kct_streaming(paths; K = 12, tmp_dir = tmp, out_dir = out,
+                                   counter = mkcounter(cmap), kw...)
+        (get_version(outp), load_kct(outp))  # dir is torn down after load
+      end
+    end
+
+    @testset "streaming == incremental; hierarchical merge" begin
+      # wave_size=2 -> 3 waves, merge_fanin=2 -> a real merge level before assembly.
+      ver, kct = stream_build(wave_size = 2, shard_bits = 2, merge_fanin = 2)
+      @test ver == 4.0
+      @test kct.counts isa SparseCountsLayer
+      @test length(kct) == 6
+      @test kct.counts.n_samples.x == 6
+      @test collect(kct.kmer.seqs) == allk
+      for x in allk
+        @test kct.counts[findfirst(kct.kmer, x)] == _expected_cv(S, x)
+      end
+      # K3 spans non-adjacent waves 1 and 2 (samples 1,2,4), K6 spans waves 2,3 (4,5)
+      @test kct.counts[findfirst(kct.kmer, K3)] == UInt32[1, 1, 0, 4, 0, 0]
+      @test kct.counts[findfirst(kct.kmer, K6)] == UInt32[0, 0, 0, 9, 9, 0]
+    end
+
+    @testset "single-wave path (no merge levels)" begin
+      ver, kct = stream_build(wave_size = 100, shard_bits = 2, merge_fanin = 5)
+      @test ver == 4.0
+      for x in allk
+        @test kct.counts[findfirst(kct.kmer, x)] == _expected_cv(S, x)
+      end
+    end
+
+    @testset "sparsity: only present samples are stored" begin
+      _, kct = stream_build(wave_size = 2, shard_bits = 2, merge_fanin = 2)
+      scl = kct.counts
+      # K5 is present in exactly samples 3 and 5 -> its row has exactly 2 pairs
+      r = scl.row_id[findfirst(kct.kmer, K5)]
+      @test scl.row_offsets[r + 1] - scl.row_offsets[r] == 2
+      # K1 present in 4 of 6 samples -> 4 pairs (no zeros stored)
+      r1 = scl.row_id[findfirst(kct.kmer, K1)]
+      @test scl.row_offsets[r1 + 1] - scl.row_offsets[r1] == 4
+    end
+
+    @testset "row deduplication" begin
+      # A,B,C,D all == count 4 in sample 1 only, so they must collapse to one pooled row.
+      A = UInt64(0x00001); B = UInt64(0x00002); C = UInt64(0x40001)
+      Dk = UInt64(0x80001); E = UInt64(0xC0001)
+      d1 = Dict{UInt64, UInt32}(A => 4, B => 4, C => 4, Dk => 4, E => 9)
+      d2 = Dict{UInt64, UInt32}(E => 9)
+      cm = Dict("a" => d1, "b" => d2)
+      kct = mktempdir() do tmp; mktempdir() do out
+        load_kct(build_kct_streaming(["a", "b"]; K = 12, wave_size = 1, shard_bits = 2,
+                                     merge_fanin = 2, tmp_dir = tmp, out_dir = out,
+                                     counter = (p -> deepcopy(cm[p]))))
+      end; end
+      rid = x -> kct.counts.row_id[findfirst(kct.kmer, x)]
+      @test rid(A) == rid(B) == rid(C) == rid(Dk)
+      @test rid(E) != rid(A)
+      @test length(kct.counts.row_offsets) - 1 == 2  # exactly two distinct rows
+      for x in (A, B, C, Dk, E)
+        @test kct.counts[findfirst(kct.kmer, x)] == UInt32[get(d1, x, UInt32(0)), get(d2, x, UInt32(0))]
+      end
+    end
+
+    @testset "V3.0 seed adapter" begin
+      full = [
+        Dict{UInt64, UInt32}(K1 => 3, K2 => 5),
+        Dict{UInt64, UInt32}(K1 => 2, K3 => 7),
+        Dict{UInt64, UInt32}(K2 => 1, K4 => 9),
+        Dict{UInt64, UInt32}(K1 => 4, K3 => 2, K4 => 1),
+      ]
+      seed = KCT{4, AAAlphabet}(deepcopy(full[1]))
+      push!(seed, deepcopy(full[2])); seed = collapse!(seed)
+
+      kct = mktempdir() do sd; mktempdir() do tmp; mktempdir() do out
+        sp = joinpath(sd, "seed.kct"); write_kct(seed, sp)
+        cm = Dict("s3" => full[3], "s4" => full[4])
+        load_kct(build_kct_streaming(["s3", "s4"]; K = 12, wave_size = 1, shard_bits = 2,
+                                     merge_fanin = 2, tmp_dir = tmp, out_dir = out,
+                                     counter = (p -> deepcopy(cm[p])), seeds = [(sp, 1)]))
+      end; end; end
+      @test kct.counts.n_samples.x == 4
+      @test length(kct) == 4
+      for x in sort([K1, K2, K3, K4])
+        @test kct.counts[findfirst(kct.kmer, x)] == UInt32[get(s, x, UInt32(0)) for s in full]
       end
     end
   end

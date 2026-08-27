@@ -10,14 +10,14 @@ using JSON
 # count, read back with `read(io, UInt64)`-equivalent (native) byte order. When
 # a k-mer's `K*2` bits and the counter's bits together still fit in one 64-bit
 # word, both are packed into a single 8-byte record instead of two separate
-# fields — matching how Kmers.jl itself packs a k-mer right-aligned in a UInt64
-# (data in the low `K*symbol_size` bits, zero padding above; verified against
+# fields, matching how Kmers.jl itself packs a k-mer right-aligned in a UInt64
+# (data in the low `K*symbol_size` bits, zero padding above, verified against
 # `Kmer{DNAAlphabet{2},4}(LongDNA{2}("ACGT")).data[1] == 0b00011011`), which
 # leaves room for the counter in the untouched high bits with no overlap.
 #
 # This reproduces (safety- and efficiency-hardened, see below) a parser that was
-# already validated against real Jellyfish output in an earlier NeoKCT version;
-# the record math (branch condition, shift amounts) is intentionally unchanged.
+# already validated against real Jellyfish output in an earlier NeoKCT version.
+# The record math (branch condition, shift amounts) is intentionally unchanged.
 # If you're parsing an unfamiliar Jellyfish build/version for the first time,
 # spot-check a handful of entries against `jellyfish dump -c <file>` (see
 # `verify_jellyfish_dump` below) before trusting a full production parse.
@@ -40,8 +40,8 @@ end
 
 # Zeroes the high `64 - K*symbol_size` unused/padding bits so the raw word is a
 # clean, directly-comparable stand-in for a properly-constructed Kmer's
-# `.data[1]` — Kmers.jl packs k-mers right-aligned (low bits = data, high bits
-# = zero padding; verified against Kmer{DNAAlphabet{2},4}(LongDNA{2}("ACGT")).
+# `.data[1]`. Kmers.jl packs k-mers right-aligned (low bits = data, high bits
+# = zero padding, verified against Kmer{DNAAlphabet{2},4}(LongDNA{2}("ACGT")).
 # data[1] == 0b00011011). Needed since the raw word is used as a Dict key and,
 # downstream, sorted and compared as a raw UInt64 by KmerLayer.
 @inline function _clean_kmer_bits(bits::UInt64, K::Int, symbol_size::Int)::UInt64
@@ -118,7 +118,7 @@ each DNA `K`-mer's raw `DNAAlphabet{2}` bit-encoding (right-aligned in the
 how many records are read from disk per bulk read (memory/syscall trade-off).
 
 Errors if the dump was built with canonical counting (`-C`/`--canonical`)
-unless `allow_canonical=true` — see `jellyfish_dump_hash` for why that matters
+unless `allow_canonical=true`. See `jellyfish_dump_hash` for why that matters
 when the goal is single-frame translation to amino-acid k-mers.
 """
 function parse_jellyfish_dna_dump(fn::String; allow_canonical::Bool=false, min_count::Integer=0,
@@ -190,8 +190,8 @@ dropped, same as the live-sequencing path.
 
 The result has exactly the shape `KCT{K÷3, AAAlphabet}(...)` and
 `push!(kct, ...)` expect, so a Jellyfish dump can be plugged directly into the
-existing KCT-building pipeline in place of a `jello_superthreaded_hash` sample
-— useful when only pre-computed counts (e.g. GTEx) are available and the raw
+existing KCT-building pipeline in place of a `jello_superthreaded_hash` sample.
+Useful when only pre-computed counts (e.g. GTEx) are available and the raw
 reads aren't.
 
 See `parse_jellyfish_dna_dump` for the `allow_canonical`/`min_count`/

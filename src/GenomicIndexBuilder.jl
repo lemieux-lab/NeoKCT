@@ -5,7 +5,7 @@
 # k-mers appearing in multiple biotypes accumulate bits via OR.
 
 # GTF: transcript lines carry a `transcript_biotype` attribute.
-# GFF3: transcript/mRNA lines carry a `biotype` attribute; ID looks like "transcript:ENST...".
+# GFF3: transcript/mRNA lines carry a `biotype` attribute, with an ID like "transcript:ENST...".
 function _parse_transcript_biotypes_gtf(path::String)
     tid_to_biotype = Dict{String, String}()
     for rec in stream(path)
@@ -61,11 +61,11 @@ end
     build_genomic_index(fasta_path, annotation_path, K; ...)
 
 Build a `KCT{K÷3, AAAlphabet, Nothing, BiotypLayer}` from an Ensembl transcript FASTA and a GTF or GFF3.
-`K` is the **DNA** k-mer length (same convention as `build_kct`).
+`K` is the nucleotide k-mer length, same convention as `build_kct`.
 
-Biotype membership is determined from `transcript_biotype` in the FASTA headers (Ensembl cdna.all.fa)
-or, as a fallback, from the annotation file. k-mers appearing in multiple biotypes accumulate bits
-via OR. k-mers with no annotation default to `INTERGENIC_MASK`.
+Biotype membership comes from `transcript_biotype` in the FASTA headers (Ensembl cdna.all.fa),
+falling back to the annotation file. A k-mer that appears in more than one biotype accumulates
+its bits via OR. A k-mer with no annotation defaults to `INTERGENIC_MASK`.
 """
 function build_genomic_index(fasta_path::String, annotation_path::String, K::Int;
                               checkpoint_size::Type{<:Unsigned}=UInt64,
@@ -79,8 +79,8 @@ end
 function _build_genomic_index_data(fasta_path::String, annotation_path::String, K::Int)
     tid_to_biotype = _parse_transcript_biotypes(annotation_path)
 
-    # Collect all encountered biotype names; intergenic must be first.
-    # We pre-scan to build a stable ordered list before assigning bit positions.
+    # Collect all encountered biotype names, with intergenic first. Pre-scan to build a
+    # stable ordered list before assigning bit positions.
     seen_biotypes = Set{String}()
     for (_, bt) in tid_to_biotype; push!(seen_biotypes, bt); end
     biotype_names = vcat(["intergenic"], sort!(collect(seen_biotypes)))

@@ -12,13 +12,18 @@ using Base.Threads
 include("BioParser.jl")
 include("AAAlphabet.jl")
 
-# Returns 2 bit version of a nucleic acid
+# Parallel k-mer counter. Streams a FASTQ (or other bio file) in chunks, counts each chunk
+# on its own thread as amino-acid k-mers, and folds the per-chunk hash-tables together as
+# they finish. The entry point is jello_superthreaded_hash.
+
+# 2-bit code (0..3) for a nucleic acid.
 function twobit(n::NucleicAcid)::UInt8
     bits = compatbits(n)
     return UInt8(trailing_zeros(bits))
 end
 
-# Translates a K-mer of DNA/RNA to a 5 bits amino acid k-mer
+# Translate a DNA/RNA k-mer in a single reading frame to a 5-bit amino-acid k-mer.
+# Returns nothing if an in-frame stop codon is hit or the length is not a multiple of 3.
 function translate(kmer::Kmer{Ab}, code::BioSequences.GeneticCode=ncbi_trans_table[1]) where {Ab<:Union{DNAAlphabet, RNAAlphabet}}
     bps = BioSequences.bits_per_symbol(BioSequences.BitsPerSymbol(AAAlphabet()))
     aa_sequence = AminoAcid[]
@@ -39,7 +44,7 @@ function translate(kmer::Kmer{Ab}, code::BioSequences.GeneticCode=ncbi_trans_tab
     return pkmer
 end
 
-# Chops a DNA/RNA sequence into an array of K-mers 
+# Chop a DNA/RNA sequence into its overlapping K-mers.
 function k_merize(sequence::LongSequence{Ab}; K::Int) where {Ab<:Alphabet}
     length(sequence) < K && error("Read of size $(length(sequence)) too small for $K-mers")
     to_return = Kmer{Ab, K}[]
@@ -49,7 +54,7 @@ function k_merize(sequence::LongSequence{Ab}; K::Int) where {Ab<:Alphabet}
     return to_return
 end
 
-# Chops a 5 bits amino acid sequence into an array of K-mers 
+# Chop a 5-bit amino-acid sequence into its overlapping K-mers.
 function k_merize(sequence::LongAA; K::Int)
     length(sequence) < K && error("Read of size $(length(sequence)) too small for $K-mers")
     to_return = Kmer{AAAlphabet, K}[]
@@ -59,8 +64,9 @@ function k_merize(sequence::LongAA; K::Int)
     return to_return
 end
 
-# Reads through a bio file (see BioParser), populating chunks of Sequences
-# Full chunks are dispatched to a thread for k-mer counting
+# Read through a bio file (see BioParser), filling fixed-size chunks of sequences. Each full
+# chunk is handed to a spawned task for k-mer counting, and the leftover partial chunk is
+# flushed at EOF. Blocks until every counting task has finished.
 function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}}, chunking::Int=1_000_000; verbose::Bool=false)
     counting_tasks = Vector{Task}()
     current_chunk = String[]
@@ -100,7 +106,9 @@ function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UI
     finish!(progress)
 end
 
-# K-mer counting (with translation to 5 bits AA) of a chunk of DNA/RNA sequences (from chunk_stream)
+# Count one chunk of DNA/RNA sequences (from chunk_stream) as translated 5-bit AA k-mers,
+# then drop the resulting hash-table onto merge_queue. Reads with an 'N' are skipped. Any
+# error is logged and the (possibly partial) hash-table is still enqueued.
 function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}}; verbose::Bool=false)
     hash = Dict{UInt64, UInt32}()
     try 
@@ -127,7 +135,18 @@ function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UI
     end
 end
 
-# Main function of JelloFish. Spawns chunk_stream task to read a fastq, continuously merges count hash-tables until done
+"""
+    jello_superthreaded_hash(fastq, K, chunking=1_000_000, queue_size=128; verbose=false)
+        -> Dict{UInt64, UInt32}
+
+Count every amino-acid `K÷3`-mer in `fastq` and return a map from a k-mer's raw
+bit-encoding (`Kmer{AAAlphabet, K÷3, 1}.data[1]`) to its count. `K` is the
+nucleotide k-mer length. Reads are k-merized, translated in a single frame, and
+counted per chunk on separate threads, while a pairer task keeps merging the
+finished per-chunk hash-tables in a binary-tree pattern until one table is left.
+`chunking` sets the reads per chunk, `queue_size` the merge-queue depth. This is
+the per-sample input `KCT{K÷3, AAAlphabet}` and `push!` expect.
+"""
 function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000, queue_size::Int=128; verbose::Bool=false)
     Hash_Type = Dict{UInt64, UInt32}
     merge_queue = Channel{Hash_Type}(queue_size)

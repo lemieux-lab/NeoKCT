@@ -1,6 +1,6 @@
 # NeoKCT
  
-**Neo K-mer Count Table** a reference-free, memory-efficient framework for transcriptomic profiling at scale.
+**Neo K-mer Count Table** is a reference-free, memory-efficient framework for transcriptomic profiling at scale.
  
 ---
  
@@ -55,22 +55,22 @@ Each sample is processed into a k-mer count hash table, then merged into a singl
  
 ## Key Technical Features
  
-- **Bit-packed count storage** (`PackedArray`): variable-width values packed into fixed-size words, dramatically reducing memory footprint compared to standard arrays. Implements `AbstractVector{Vector{T}}`.
+- **Bit-packed count storage** (`PackedArray`): variable-width values packed into fixed-size words, keeping the memory footprint well below a standard array of vectors. Implements `AbstractVector{Vector{T}}`.
 
   ![](Figures/Project_Figures_4.svg)
-- **Delta-encoded k-mer sequences** (`DeltaArray`): sorted k-mer bit-patterns stored as delta-encoded integers (UInt64 values, UInt32 deltas by default), roughly halving sequence storage. Periodic checkpoints bound random access to O(checkpoint interval); sequential iteration is O(1) amortized. Overflow deltas are transparently promoted to checkpoints. Both the checkpoint type `C` and delta type `D` are type parameters, allowing compact alternatives for small tables.
+- **Delta-encoded k-mer sequences** (`DeltaArray`): sorted k-mer bit-patterns stored as delta-encoded integers (UInt64 values, UInt32 deltas by default), roughly halving sequence storage. Periodic checkpoints bound random access to O(checkpoint interval), and sequential iteration is O(1) amortized. Overflow deltas are transparently promoted to checkpoints. Both the checkpoint type `C` and delta type `D` are type parameters, allowing compact alternatives for small tables.
   
   `PackedArray` and `DeltaArray` are provided by the [`NArrays`](https://github.com/lemieux-lab/NArrays) package (originally developped for this project).
 
   ![](Figures/Project_Figures_5.svg)
-- **Layered architecture**: a `KCT{K, Ab, Counts, Biotype, C, D}` is a wrapper combining up to three independent layers. `KmerLayer` holds the sorted k-mer sequences and prefix index; `CountsLayer` holds the CSR count table; `BiotypLayer` holds the deduplicated biotype bitmask pool. Layers can be added or omitted independently, unifying `NeoKCT`, `RichKCT`, and `GenomicIndex` into a single type. Cross-layer operations (`push!`, `add_biotypes`, `collapse!`) are defined at the `KCT` level.
+- **Layered architecture**: a `KCT{K, Ab, Counts, Biotype, C, D}` is a wrapper combining up to three independent layers. `KmerLayer` holds the sorted k-mer sequences and prefix index. `CountsLayer` (V3.0) or `SparseCountsLayer` (V4.0) holds the count table. `BiotypLayer` holds the deduplicated biotype bitmask pool. Layers can be added or omitted independently, folding the old `NeoKCT`, `RichKCT`, and `GenomicIndex` types into one. Cross-layer operations (`push!`, `add_biotypes`, `collapse!`) are defined at the `KCT` level.
 - **Compressed Sparse Row (CSR) layout**: k-mer sequences, per-k-mer CID counts (`n_cids`, reconstructed by cumulative sum), and count word IDs are stored in three flat vectors, minimizing per-entry allocation overhead.
-- **Prefix-indexed binary search**: a 4-symbol prefix index partitions the sorted k-mer list into buckets, accelerating lookup. Within each bucket, `DeltaArray.searchfirst` performs an efficient in-order scan without full decode.
+- **Prefix-indexed binary search**: an index keyed on the leading k-mer symbols (5 by default) partitions the sorted k-mer list into buckets, so a lookup jumps straight to the right bucket. Within each bucket, `DeltaArray.searchfirst` does an in-order scan without full decode.
 - **Parallel k-merization**: multi-threaded chunk-based processing of FASTQ files with parallel hash-table merging (`jello_superthreaded_hash`).
 - **Parallel merge-sort**: task-based divide-and-conquer sort used when integrating new samples into the table.
 - **DNA to amino acid translation**: nucleotide k-mers are translated to amino acid k-mers using a custom 5-bit alphabet, enabling peptide-level queries.
-- **Biotype annotation layer** (`BiotypLayer`): an Ensembl transcript FASTA and a GTF or GFF3 annotation are k-merized into a `KCT{Nothing, BiotypLayer}` — a sorted table of amino-acid k-mers, each tagged with a bitmask whose bits flag which transcript biotypes (protein-coding, lncRNA, ...) cover that k-mer. Multiple biotypes for the same k-mer are OR-accumulated. Calling `add_biotypes(kct, gidx)` performs an O(n+m) sorted merge walk and returns a `KCT{CountsLayer, BiotypLayer}`, which exposes `counts + biotype_mask` per k-mer. K-mers absent from the reference receive an intergenic mask. Biotype bitmasks are deduplicated in a compact pool, keeping memory overhead minimal even for large cohorts.
-- **Versioned binary serialization**: all KCT variants are written and read through a single `write_kct` / `load_kct` pair using a v3.0 binary format with a `layers_mask` header byte. Older files (NeoKCT v1.2, v1.3, v1.4; RichKCT v2.0; GenomicIndex v1.0) are loaded and automatically upgraded to the current `KCT` type.
+- **Biotype annotation layer** (`BiotypLayer`): an Ensembl transcript FASTA and a GTF or GFF3 annotation are k-merized into a `KCT{Nothing, BiotypLayer}`, a sorted table of amino-acid k-mers, each tagged with a bitmask whose bits flag which transcript biotypes (protein-coding, lncRNA, and so on) cover that k-mer. Multiple biotypes for the same k-mer are OR-accumulated. Calling `add_biotypes(kct, gidx)` performs an O(n+m) sorted merge walk and returns a `KCT{CountsLayer, BiotypLayer}`, which exposes `counts + biotype_mask` per k-mer. K-mers absent from the reference receive an intergenic mask. Biotype bitmasks are deduplicated in a compact pool, keeping memory overhead minimal even for large cohorts.
+- **Versioned binary serialization**: all KCT variants are written and read through a single `write_kct` / `load_kct` pair. A `CountsLayer` table is written as v3.0, a `SparseCountsLayer` table as v4.0, both with a `layers_mask` header byte. Older files (NeoKCT v1.2, v1.3, v1.4, RichKCT v2.0, GenomicIndex v1.0) load and upgrade to the current `KCT` type automatically.
  
 ---
  
@@ -115,7 +115,8 @@ kct = build_kct(
     30,       # nucleotide k-mer length (must be divisible by 3)
     500_000;  # chunk size for parallel processing
     word_size = UInt128,
-    collapse_every = 5,
+    batch = 10,
+    benchmark_every = 5,
     save_at_samples = [10, 50, 100],
     save_path = "output/"
 )
@@ -163,7 +164,10 @@ has_biotype(rich.biotype, i, "protein_coding")
 | `KCTLayers.jl` | All layer structs (`KmerLayer`, `CountsLayer`, `BiotypLayer`), `KCT` wrapper, cross-layer logic, `build_kct` |
 | `JelloFish.jl` | Parallel k-merization and counting from FASTQ |
 | `AAAlphabet.jl` | Custom 5-bit amino acid alphabet for `BioSequences` |
-| `KCTLoader.jl` | Binary serialization / deserialization (v3.0 native; retrocompat v1.2, v1.3, v1.4, v2.0, GenomicIndex v1.0) |
+| `KCTLoader.jl` | Binary serialization / deserialization (v3.0 and v4.0 native, retrocompat v1.2, v1.3, v1.4, v2.0, GenomicIndex v1.0) |
+| `SparseCountsLayer.jl` | V4.0 row-deduplicated sparse count layer |
+| `StreamBuild.jl` | `build_kct_streaming`: from-scratch k-way streaming merge into a V4.0 table |
+| `JellyfishDump.jl` | Parser for Jellyfish's own binary dump format, plus DNA-to-AA translation into a KCT-ready hash |
 | `KCTBenchmarker.jl` | Memory and performance benchmarking with SVG plots |
 | `BioParser.jl` | Unified reader for FASTQ, gzipped FASTQ, mzid, FASTA, GTF, and GFF3 files |
 | `GenomicIndexBuilder.jl` | `build_genomic_index`: builds a `KCT{BiotypLayer}` from Ensembl transcript FASTA + GTF/GFF3 |

@@ -6,6 +6,12 @@ end
 using GZip
 using EzXML
 
+# One reader for every input format the pipeline touches: plain and gzipped FASTQ, FASTA,
+# GTF, GFF3, and mzid. `stream(path)` picks the parser from the extension (looking one
+# level past `.gz`) and returns an iterable of records. FASTQ and FASTA yield sequence
+# strings or `FastaRecord`s, GTF and GFF3 yield feature records with parsed attributes, and
+# mzid yields the `<Seq>` peptide strings.
+
 abstract type Fq end
 
 struct FastqGZ <: Fq
@@ -58,7 +64,7 @@ function stream(path::String)
     return stream(Val{Symbol(ext)}, path)
 end
 
-# ---- FASTA ----
+## FASTA ##
 
 struct FastaRecord
     header::String
@@ -106,7 +112,7 @@ Base.iterate(fa::FastaFileGZ, state::Union{Nothing, String}=nothing) = _iterate_
 Base.IteratorSize(::Type{FastaFile}) = Base.SizeUnknown()
 Base.IteratorSize(::Type{FastaFileGZ}) = Base.SizeUnknown()
 
-# ---- GTF ----
+## GTF ##
 
 struct GtfRecord
     seqname::String
@@ -151,7 +157,7 @@ Base.iterate(gtf::GtfFileGZ, state=nothing) = _iterate_gtf(gtf.iterable, state)
 Base.IteratorSize(::Type{GtfFile}) = Base.SizeUnknown()
 Base.IteratorSize(::Type{GtfFileGZ}) = Base.SizeUnknown()
 
-# ---- GFF3 ----
+## GFF3 ##
 
 struct Gff3Record
     seqname::String
