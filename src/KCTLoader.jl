@@ -65,8 +65,11 @@ _layers_mask(::CountsLayer, ::BiotypLayer) = UInt8(3)
 _layers_mask(::SparseCountsLayer, ::BiotypLayer) = UInt8(3)
 
 # Shared prefix (version + header + KmerLayer block) for V3.0 and V4.0.
+# `string(Ab)` keeps type parameters ("DNAAlphabet{2}"), where `.name.singletonname` drops
+# them; `_read_header_and_kmers` parses it back with Meta.parse. For plain `AAAlphabet` both
+# forms are the same string, so V3.0 files stay byte-identical.
 function _write_header_and_kmers(io::IO, kct::KCT{K, Ab, Counts, Biotype, C, D}) where {K, Ab<:Alphabet, Counts, Biotype, C<:Unsigned, D<:Unsigned}
-    Ab_name = String(Ab.name.singletonname)
+    Ab_name = string(Ab)
     write(io, Int64(K))
     write(io, Int64(length(Ab_name))); write(io, codeunits(Ab_name))
     write(io, _layers_mask(kct.counts, kct.biotype))
@@ -132,7 +135,7 @@ end
 function _read_header_and_kmers(io::IO)
     K = Int(read(io, Int64))
     Ab_name_len = read(io, Int64)
-    Ab = eval(Symbol(String([read(io, UInt8) for _ in 1:Ab_name_len])))
+    Ab = eval(Meta.parse(String([read(io, UInt8) for _ in 1:Ab_name_len])))  # parses "DNAAlphabet{2}" too
     layers_mask = read(io, UInt8)
     n_kmers = read(io, Int64)
     C_type = _WORD_TYPES[read(io, Int64)]

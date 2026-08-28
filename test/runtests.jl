@@ -371,7 +371,7 @@ end
 
     stream_build(; kw...) = mktempdir() do tmp
       mktempdir() do out
-        outp = build_kct_streaming(paths; K = 12, tmp_dir = tmp, out_dir = out,
+        outp = build_kct_streaming(paths; K = 12, translate = true, tmp_dir = tmp, out_dir = out,
                                    counter = mkcounter(cmap), kw...)
         (get_version(outp), load_kct(outp))  # dir is torn down after load
       end
@@ -420,7 +420,7 @@ end
       d2 = Dict{UInt64, UInt32}(E => 9)
       cm = Dict("a" => d1, "b" => d2)
       kct = mktempdir() do tmp; mktempdir() do out
-        load_kct(build_kct_streaming(["a", "b"]; K = 12, wave_size = 1, shard_bits = 2,
+        load_kct(build_kct_streaming(["a", "b"]; K = 12, translate = true, wave_size = 1, shard_bits = 2,
                                      merge_fanin = 2, tmp_dir = tmp, out_dir = out,
                                      counter = (p -> deepcopy(cm[p]))))
       end; end
@@ -446,7 +446,7 @@ end
       kct = mktempdir() do sd; mktempdir() do tmp; mktempdir() do out
         sp = joinpath(sd, "seed.kct"); write_kct(seed, sp)
         cm = Dict("s3" => full[3], "s4" => full[4])
-        load_kct(build_kct_streaming(["s3", "s4"]; K = 12, wave_size = 1, shard_bits = 2,
+        load_kct(build_kct_streaming(["s3", "s4"]; K = 12, translate = true, wave_size = 1, shard_bits = 2,
                                      merge_fanin = 2, tmp_dir = tmp, out_dir = out,
                                      counter = (p -> deepcopy(cm[p])), seeds = [(sp, 1)]))
       end; end; end
@@ -454,6 +454,86 @@ end
       @test length(kct) == 4
       for x in sort([K1, K2, K3, K4])
         @test kct.counts[findfirst(kct.kmer, x)] == UInt32[get(s, x, UInt32(0)) for s in full]
+      end
+    end
+  end
+
+  @testset "11. Rolling k-mer counter and DNA streaming build" begin
+    _count(chunk, K; translate) = begin
+      mq = Channel{Dict{UInt64, UInt32}}(1)
+      count_kmers(chunk, K, mq; translate = translate)
+      take!(mq)
+    end
+    _ok(l) = length(l) >= 12 && all(c -> c in ('A', 'C', 'G', 'T'), l)
+
+    reads = ["ACGTACGTACGTACGTACGTACGTACGTAC",
+             "GGGCCCTTTAAAGGGCCCTTTAAAGGGCCCT",
+             "ACGTNCGTACGTACGTACGTACGTACGTAC",   # N -> whole read skipped
+             "ACG",                              # shorter than K -> skipped
+             "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+             "ATGATGATGATGATGATGATGATGATGATG"]
+    K = 12
+
+    @testset "translate=true is bit-identical to translate(k_merize(...))" begin
+      ref = Dict{UInt64, UInt32}()
+      for l in filter(_ok, reads)
+        for km in k_merize(LongSequence{DNAAlphabet{2}}(l), K = K)
+          a = translate(km)
+          a === nothing && continue
+          ref[a.data[1]] = get(ref, a.data[1], UInt32(0)) + UInt32(1)
+        end
+      end
+      @test _count(reads, K; translate = true) == ref
+    end
+
+    @testset "translate=false gives raw DNA k-mer codes" begin
+      ref = Dict{UInt64, UInt32}()
+      for l in filter(_ok, reads)
+        seq = LongSequence{DNAAlphabet{2}}(l)
+        for i in 1:(length(seq) - K + 1)
+          c = Kmer{DNAAlphabet{2}, K}(seq[i:i + K - 1]).data[1]
+          ref[c] = get(ref, c, UInt32(0)) + UInt32(1)
+        end
+      end
+      @test _count(reads, K; translate = false) == ref
+    end
+
+    @testset "DNA streaming build -> KCT{K, DNAAlphabet{2}} V4.0" begin
+      A = UInt64(0x000010); B = UInt64(0x200001); C = UInt64(0x400005)
+      Dk = UInt64(0x600002); E = UInt64(0x400777)
+      S = [
+        Dict{UInt64, UInt32}(A => 3, B => 5, C => 1),
+        Dict{UInt64, UInt32}(A => 3, Dk => 2, C => 1),
+        Dict{UInt64, UInt32}(A => 2, B => 7, Dk => 6, E => 8),
+        Dict{UInt64, UInt32}(C => 4, E => 9),
+      ]
+      allk = sort([A, B, C, Dk, E])
+      cv(x) = UInt32[get(s, x, UInt32(0)) for s in S]
+      cm = Dict("s$i" => S[i] for i in eachindex(S))
+
+      ver, kct = mktempdir() do tmp; mktempdir() do out
+        p = build_kct_streaming(["s$i" for i in eachindex(S)]; K = 12, translate = false, idx_prefix = 12,
+                                wave_size = 2, shard_bits = 2, merge_fanin = 2,
+                                tmp_dir = tmp, out_dir = out, counter = (x -> deepcopy(cm[x])))
+        (get_version(p), load_kct(p))
+      end; end
+
+      @test ver == 4.0
+      @test kct isa KCT{12, DNAAlphabet{2}}
+      @test kct.counts isa SparseCountsLayer
+      @test kct.counts.n_samples.x == 4
+      @test collect(kct.kmer.seqs) == allk
+      for x in allk
+        @test kct.counts[findfirst(kct.kmer, x)] == cv(x)
+      end
+
+      # round-trip preserves the DNA alphabet in the header
+      kct2 = mktempdir() do d
+        p = joinpath(d, "rt.kct"); write_kct(kct, p); load_kct(p)
+      end
+      @test kct2 isa KCT{12, DNAAlphabet{2}}
+      for x in allk
+        @test kct2.counts[findfirst(kct2.kmer, x)] == cv(x)
       end
     end
   end

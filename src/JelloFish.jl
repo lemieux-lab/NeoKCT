@@ -64,65 +64,139 @@ function k_merize(sequence::LongAA; K::Int)
     return to_return
 end
 
-# Read through a bio file (see BioParser), filling fixed-size chunks of sequences. Each full
-# chunk is handed to a spawned task for k-mer counting, and the leftover partial chunk is
-# flushed at EOF. Blocks until every counting task has finished.
-function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}}, chunking::Int=1_000_000; verbose::Bool=false)
-    counting_tasks = Vector{Task}()
+## Fast rolling counter ##
+
+#= The `translate` + `k_merize` path above allocates a Vector{Kmer} per read and constructs
+a fresh Kmer per position, which at ~1e10 read-k-mers per sample is the whole runtime. The
+counter below rolls a 2-bit code one base at a time with nothing allocated in the inner
+loop. `translate=false` emits the raw nucleotide K-mer code, `translate=true` folds the
+K-nt window through a 64-entry codon table into a 5*(K/3)-bit AA code. AA output is
+bit-identical to `translate(k_merize(...))` (same codon table, same stop-drop, same symbol
+order), so tables built either way stay comparable. =#
+
+# ASCII byte -> 2-bit code (A/a=0 C/c=1 G/g=2 T/t=3), 0xff for anything else.
+const _NT2BIT = let t = fill(0xff, 256)
+    for (c, v) in (('A', 0x00), ('C', 0x01), ('G', 0x02), ('T', 0x03))
+        t[UInt8(c) + 1] = v
+        t[UInt8(lowercase(c)) + 1] = v
+    end
+    t
+end
+
+# 6-bit codon (b1<<4 | b2<<2 | b3, same 2-bit order as _NT2BIT) -> 5-bit AAAlphabet code,
+# 0xff on a stop codon. Built from the exact GeneticCode indexing the `translate` above uses.
+const _CODON2AA5 = let t = Vector{UInt8}(undef, 64), gc = BioSequences.ncbi_trans_table[1]
+    for c in 0:63
+        aa = gc[UInt64(c)]
+        t[c + 1] = aa == AA_Term ? 0xff : UInt8(BioSequences.encode(AAAlphabet(), aa))
+    end
+    t
+end
+
+const _STOP_KEY = typemax(UInt64)  # sentinel from _fold_codons for an in-frame stop
+
+# Fold the K-nt window packed in the low 2K bits of `code` (5' base highest) into a
+# 5*kk-bit AA code, first codon in the high bits. _STOP_KEY if any codon is a stop.
+@inline function _fold_codons(code::UInt64, twoK::Int, kk::Int)
+    aac = UInt64(0)
+    @inbounds for j in 0:(kk - 1)
+        cod = Int((code >> (twoK - 6 - 6j)) & 0x3f)
+        a = _CODON2AA5[cod + 1]
+        a == 0xff && return _STOP_KEY
+        aac = (aac << 5) | a
+    end
+    return aac
+end
+
+# True if the read has any byte that is not A/C/G/T. Matches the old "skip read with N",
+# and also catches other IUPAC codes that used to crash the whole chunk in LongSequence().
+@inline function _has_nonacgt(l::String)
+    @inbounds for p in 1:ncodeunits(l)
+        _NT2BIT[codeunit(l, p) + 1] == 0xff && return true
+    end
+    return false
+end
+
+# Read through a bio file (see BioParser), filling fixed-size chunks of reads. Each full
+# chunk is handed to a spawned task for counting; the leftover partial chunk is flushed at
+# EOF. `max_inflight` caps concurrently-running count tasks: the reader blocks on the
+# semaphore once that many are outstanding, so ingestion cannot outrun counting. Blocks
+# until every counting task has finished.
+function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}},
+                      chunking::Int=1_000_000; translate::Bool=false,
+                      max_inflight::Int=max(2, Threads.nthreads()), verbose::Bool=false)
+    counting_tasks = Task[]
+    gate = Base.Semaphore(max_inflight)
+    inflight = Threads.Atomic{Int}(0)
     current_chunk = String[]
     sizehint!(current_chunk, chunking)
     i = 0
     io = stream(file)
 
-    progress = ProgressUnknown(desc = "Processing $chunking k-mers chunks...")
+    spawn_chunk! = function (chunk)
+        Base.acquire(gate)
+        Threads.atomic_add!(inflight, 1)
+        push!(counting_tasks, Threads.@spawn begin
+            try
+                count_kmers(chunk, K, merge_queue; translate = translate)
+            finally
+                Threads.atomic_sub!(inflight, 1)
+                Base.release(gate)
+            end
+        end)
+    end
+
+    progress = ProgressUnknown(desc = "Processing $chunking read chunks...")
     for seq in io
         push!(current_chunk, seq)
         i += 1
         if i % chunking == 0
             let chunk = current_chunk
-                push!(counting_tasks, @spawn count_kmers(chunk, K, merge_queue, verbose=true))
+                spawn_chunk!(chunk)
             end
             current_chunk = String[]
             sizehint!(current_chunk, chunking)
-
         end
-
-        !verbose && next!(progress; showvalues=[
-            ("active counting tasks", length(filter(x->x.state!=:done, counting_tasks))),
+        !verbose && next!(progress; showvalues = [
+            ("running counting tasks", inflight[]),
             ("items in merge queue", merge_queue.n_avail_items),
-            ("chunks sent", i÷chunking)
+            ("chunks sent", i ÷ chunking),
         ])
     end
 
-    if !isempty(current_chunk)
-        push!(counting_tasks, @spawn count_kmers(current_chunk, K, merge_queue, verbose=true))
-        !verbose && ProgressMeter.update!(progress; showvalues=[
-            ("active counting tasks", length(filter(x->x.state!=:done, counting_tasks))),
-            ("items in merge queue", merge_queue.n_avail_items),
-            ("chunks sent", i÷chunking+1)
-        ])
-    end
+    isempty(current_chunk) || spawn_chunk!(current_chunk)
     wait.(counting_tasks)
     finish!(progress)
 end
 
-# Count one chunk of DNA/RNA sequences (from chunk_stream) as translated 5-bit AA k-mers,
-# then drop the resulting hash-table onto merge_queue. Reads with an 'N' are skipped. Any
-# error is logged and the (possibly partial) hash-table is still enqueued.
-function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}}; verbose::Bool=false)
+# Count one chunk of reads and drop the hash-table onto merge_queue. `translate=false`
+# counts raw nucleotide K-mers, `translate=true` counts their in-frame AA (K/3)-mers.
+# Reads with any non-ACGT base are skipped whole. Errors are logged and the partial table
+# is still enqueued.
+function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}};
+                     translate::Bool=false, verbose::Bool=false)
     hash = Dict{UInt64, UInt32}()
-    try 
-        for l in chunk
-            'N' in l && continue
-            seq = LongSequence{DNAAlphabet{2}}(l)
-            length(seq) < K && continue
-            kmers = translate.(k_merize(seq, K=K))
-            for kmer in kmers
-                isnothing(kmer) && continue
-                if !(haskey(hash, kmer.data[1]))
-                    hash[kmer.data[1]] = UInt32(0)
+    twoK = 2K
+    twoK <= 64 || error("K=$K too large for a 64-bit nucleotide code")
+    translate && (5 * (K ÷ 3) <= 64 || error("K=$K too large for a 64-bit AA code"))
+    kmer_mask = twoK == 64 ? typemax(UInt64) : (UInt64(1) << twoK) - UInt64(1)
+    kk = translate ? K ÷ 3 : K
+    try
+        @inbounds for l in chunk
+            (ncodeunits(l) < K || _has_nonacgt(l)) && continue
+            code = UInt64(0)
+            valid = 0
+            for p in 1:ncodeunits(l)
+                code = ((code << 2) | _NT2BIT[codeunit(l, p) + 1]) & kmer_mask
+                valid += 1
+                valid < K && continue
+                if translate
+                    key = _fold_codons(code, twoK, kk)
+                    key == _STOP_KEY && continue
+                else
+                    key = code
                 end
-                hash[kmer.data[1]] += 1
+                hash[key] = get(hash, key, UInt32(0)) + UInt32(1)
             end
         end
     catch e
@@ -136,18 +210,22 @@ function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UI
 end
 
 """
-    jello_superthreaded_hash(fastq, K, chunking=1_000_000, queue_size=128; verbose=false)
+    jello_superthreaded_hash(fastq, K, chunking=1_000_000, queue_size=128;
+                             translate=false, max_inflight=nthreads(), verbose=false)
         -> Dict{UInt64, UInt32}
 
-Count every amino-acid `K÷3`-mer in `fastq` and return a map from a k-mer's raw
-bit-encoding (`Kmer{AAAlphabet, K÷3, 1}.data[1]`) to its count. `K` is the
-nucleotide k-mer length. Reads are k-merized, translated in a single frame, and
-counted per chunk on separate threads, while a pairer task keeps merging the
-finished per-chunk hash-tables in a binary-tree pattern until one table is left.
-`chunking` sets the reads per chunk, `queue_size` the merge-queue depth. This is
-the per-sample input `KCT{K÷3, AAAlphabet}` and `push!` expect.
+Count k-mers in `fastq` and return a map from a k-mer's raw bit-encoding to its count.
+`K` is always the nucleotide k-mer length. With `translate=false` (default) the keys are
+raw `K`-nt codes (`Kmer{DNAAlphabet{2}, K, 1}.data[1]`); with `translate=true` they are the
+in-frame amino-acid `K÷3`-mer codes (`Kmer{AAAlphabet, K÷3, 1}.data[1]`), stop codons
+dropped. Reads are counted per chunk on separate threads while a pairer task folds the
+finished per-chunk tables together in a binary tree. `chunking` sets reads per chunk,
+`queue_size` the merge-queue depth, `max_inflight` the cap on concurrent counting tasks so
+the reader cannot outrun the counters.
 """
-function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000, queue_size::Int=128; verbose::Bool=false)
+function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000, queue_size::Int=128;
+                                  translate::Bool=false, max_inflight::Int=max(2, Threads.nthreads()),
+                                  verbose::Bool=false)
     Hash_Type = Dict{UInt64, UInt32}
     merge_queue = Channel{Hash_Type}(queue_size)
     merge_tasks = Task[]
@@ -173,7 +251,8 @@ function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000
         @error "Pairer task crashed" exception=(e, catch_backtrace())
     end
 
-    chunk_stream(fastq, K, merge_queue, chunking, verbose = verbose)
+    chunk_stream(fastq, K, merge_queue, chunking; translate = translate,
+                 max_inflight = max_inflight, verbose = verbose)
 
     progress = ProgressUnknown(desc = "Counting tasks done. Waiting on merger tasks to complete...")
     while inflight[] != 0 || merge_queue.n_avail_items != 0 || length(paired) != 1

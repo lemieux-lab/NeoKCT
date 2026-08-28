@@ -9,7 +9,16 @@
 # Nothing dense is ever resident: every stage streams one k-mer (one short row) at a time.
 # Peak memory is a wave's k-mer hash-table + one shard, flat across the whole build.
 
-const _STREAM_BITS_PER_AA = Int(bits_per_symbol(AAAlphabet()))  # 5
+# The streaming builder is alphabet-generic: everything downstream of the counter works on
+# raw UInt64 k-mer codes. Only the prefix shard shift and the final KmerLayer construction
+# need the alphabet, and both are derived from `translate` (see build_kct_streaming): DNA
+# gives KCT{K, DNAAlphabet{2}}, translate gives KCT{K÷3, AAAlphabet}.
+const _STREAM_BITS_PER_AA = 5   # bits_per_symbol(AAAlphabet())
+const _STREAM_BITS_PER_NT = 2   # bits_per_symbol(DNAAlphabet{2}())
+
+# println + flush: stdout is block-buffered when redirected to a file, so without the flush
+# a multi-hour wave shows nothing in the log until the buffer fills or the process exits.
+_log(args...) = (println("[", Dates.format(now(), "HH:MM:SS"), "] ", args...); flush(stdout))
 
 # One (k-mer, sample, count) observation, written raw to the wave shard record files.
 struct _StreamRec
@@ -104,6 +113,7 @@ function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, re
     try
         for (li, path) in enumerate(paths)
             slot = UInt32(first_global - 1 + li)
+            t0 = time()
             ht = counter(path)::Dict{UInt64, UInt32}
             for (k, c) in ht
                 p = _shard_of(k, keep_shift, mask) + 1
@@ -112,6 +122,8 @@ function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, re
                     write(ios[p], bufs[p]); empty!(bufs[p])
                 end
             end
+            _log("  sample $li/$(length(paths)) (global $slot): $(length(ht)) k-mers in ",
+                 round(time() - t0; digits = 1), "s  ", basename(path))
             ht = nothing
         end
         for p in 1:P
@@ -121,6 +133,7 @@ function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, re
         for io in ios; close(io); end
     end
 
+    _log("  folding $P shard record files into partials")
     for p in 0:(P - 1)
         rp = joinpath(rec_dir, "rec$(p).bin")
         _build_wave_shard(rp, joinpath(out_dir, "shard$(p).bin"))
@@ -227,7 +240,8 @@ end
 
 ## Assembly of the final .kct ##
 
-function _assemble_v4(root_dirs::Vector{String}, P::Int, aak::Int, total_samples::Int, out_path::String)
+function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_prefix::Int,
+                     total_samples::Int, out_path::String)
     all_kmers = UInt64[]
     all_row_id = UInt32[]
     grp = _RowPool()
@@ -247,10 +261,10 @@ function _assemble_v4(root_dirs::Vector{String}, P::Int, aak::Int, total_samples
     end
 
     seqs = DeltaArray{UInt64, UInt32}(all_kmers, DEFAULT_CHECKPOINT_INTERVAL)  # already globally sorted
-    kl = KmerLayer{aak, AAAlphabet, UInt64, UInt32}(seqs, _empty_kmer_idx(aak, AAAlphabet(), UInt64))
+    kl = KmerLayer{kk, Ab, UInt64, UInt32}(seqs, _empty_kmer_idx(kk, Ab(), UInt64; prefix_size = idx_prefix))
     scl = SparseCountsLayer(all_row_id, grp.offsets, grp.pool_s, grp.pool_c, Ref(Int64(total_samples)))
     kct = KCT(kl, scl)
-    compute_index!(kct.kmer)
+    compute_index!(kct.kmer; prefix_size = idx_prefix)
     write_kct(kct, out_path)
     return out_path
 end
@@ -347,30 +361,38 @@ into one `.kct`. Nothing dense is ever resident, so peak memory stays flat acros
 whole build.
 
 # Keyword Arguments
-- `K`: nucleotide k-mer length (amino-acid length is `K ÷ 3`). `chunks` is the read-chunk size
+- `K`: nucleotide k-mer length. `chunks` is the read-chunk size passed to the counter
+- `translate`: `false` (default) builds a DNA table, `KCT{K, DNAAlphabet{2}}`. `true` builds
+  a translated table, `KCT{K÷3, AAAlphabet}`. The default `counter` picks up this flag
 - `wave_size`: samples counted and folded per wave
 - `shard_bits`: gives `2^shard_bits` prefix shards. `merge_fanin` partials are combined per
   hierarchical merge step
 - `counter`: `counter(path)::Dict{UInt64,UInt32}` produces one sample's k-mer counts
-  (default `jello_superthreaded_hash`)
+  (default `jello_superthreaded_hash`, honouring `translate`)
 - `seeds`: `Vector{Tuple{String,Int}}` of `(existing .kct, first_global_sample)` folded in as
   level-0 partials. Sample ranges must be disjoint and precede the waves
 - `resume`: skips any wave or partial that already has a `DONE` marker
 - `max_pool_gb`: aborts after the first super-partial if the projected row pool exceeds it
 """
 function build_kct_streaming(sample_paths::Vector{String};
-        K::Int = 30, chunks::Int = 500_000, wave_size::Int = 100, shard_bits::Int = 8,
-        merge_fanin::Int = 5, max_pool_gb::Real = 400,
+        K::Int = 30, chunks::Int = 500_000, translate::Bool = false,
+        wave_size::Int = 100, shard_bits::Int = 8,
+        merge_fanin::Int = 5, max_pool_gb::Real = 400, idx_prefix::Int = -1,
         tmp_dir::String = _STREAM_TMP_DEFAULT, out_dir::String,
         out_path::String = joinpath(out_dir, "neokct_v4.kct"),
-        counter = (p -> jello_superthreaded_hash(p, K, chunks)),
+        counter = (p -> jello_superthreaded_hash(p, K, chunks; translate = translate)),
         seeds::Vector{Tuple{String, Int}} = Tuple{String, Int}[],
         resume::Bool = true)
 
-    aak = K ÷ 3
+    Ab = translate ? AAAlphabet : DNAAlphabet{2}
+    bps = translate ? _STREAM_BITS_PER_AA : _STREAM_BITS_PER_NT
+    kk = translate ? K ÷ 3 : K
+    # `idx_prefix` < 0 means derive it: AA keeps the tuned prefix of 5 (1<<25 buckets), DNA
+    # uses kk-12 so the bucket table stays sub-GB (k=30 -> prefix 18 -> 1<<24, ~400 MB).
+    idx_prefix < 0 && (idx_prefix = translate ? DEFAULT_IDX_PREFIX_SIZE : max(0, kk - 12))
     P = 1 << shard_bits
-    keep_shift = _STREAM_BITS_PER_AA * aak - shard_bits
-    keep_shift >= 1 || error("shard_bits=$shard_bits too large for $(aak)-AA k-mers")
+    keep_shift = bps * kk - shard_bits
+    keep_shift >= 1 || error("shard_bits=$shard_bits too large for a $(kk)-symbol k-mer")
     merge_fanin >= 2 || error("merge_fanin must be >= 2")
 
     work = joinpath(out_dir, "streaming_work"); mkpath(work)
@@ -394,7 +416,7 @@ function build_kct_streaming(sample_paths::Vector{String};
             nS = open(io -> (read(io, Int64); read(io, Int64)), joinpath(d, "manifest"))
             covered[name] = nS; n_prefix += nS
             push!(seed_names, name)
-            println("seed $si: $path -> $nS samples (global $(first_s)..$(n_prefix))")
+            _log("seed $si: $path -> $nS samples (global $(first_s)..$(n_prefix))")
         end
 
         # waves
@@ -408,7 +430,7 @@ function build_kct_streaming(sample_paths::Vector{String};
             name = "wave_$(w)"; d = joinpath(work, name)
             if !(resume && _done(name))
                 rm(d; recursive = true, force = true); mkpath(d)
-                println("wave $w/$n_waves: samples $(lo)..$(hi) (global $(first_global)..$(n_prefix + hi))")
+                _log("wave $w/$n_waves: samples $(lo)..$(hi) (global $(first_global)..$(n_prefix + hi))")
                 _run_wave(sample_paths[lo:hi], first_global, d, joinpath(rec_root, name),
                           keep_shift, P, counter)
                 rm(joinpath(rec_root, name); recursive = true, force = true)
@@ -427,7 +449,7 @@ function build_kct_streaming(sample_paths::Vector{String};
             od = joinpath(work, out)
             if !(resume && _done(out))
                 rm(od; recursive = true, force = true); mkpath(od)
-                println("merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples)")
+                _log("merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples)")
                 for p in 0:(P - 1)
                     shards = _PartialShard[_read_partial_shard(joinpath(work, i, "shard$(p).bin")) for i in ins]
                     _write_partial_shard(joinpath(od, "shard$(p).bin"), _merge_partial_shards(shards))
@@ -439,7 +461,7 @@ function build_kct_streaming(sample_paths::Vector{String};
                 checked = true
                 pb = _partial_pool_bytes(od, P)
                 proj = pb * (total_samples / covered[out]) / 1e9
-                println("row-pool tripwire: $(round(pb / 1e9; digits = 2)) GB over $(covered[out]) samples " *
+                _log("row-pool tripwire: $(round(pb / 1e9; digits = 2)) GB over $(covered[out]) samples " *
                         "-> ~$(round(proj; digits = 1)) GB projected at $total_samples samples")
                 proj > max_pool_gb && error("projected row pool ~$(round(proj; digits = 1)) GB exceeds " *
                     "max_pool_gb=$max_pool_gb; row diversity is higher than expected (see plan fallback)")
@@ -447,8 +469,8 @@ function build_kct_streaming(sample_paths::Vector{String};
         end
 
         # assemble
-        println("assembling -> $out_path  ($total_samples samples)")
-        _assemble_v4([joinpath(work, r) for r in roots], P, aak, total_samples, out_path)
+        _log("assembling -> $out_path  ($total_samples samples)")
+        _assemble_v4([joinpath(work, r) for r in roots], P, kk, Ab, idx_prefix, total_samples, out_path)
         rm(work; recursive = true, force = true)
         return out_path
     finally
