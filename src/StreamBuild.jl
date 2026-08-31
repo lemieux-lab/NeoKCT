@@ -358,7 +358,9 @@ Build a V4.0 (`SparseCountsLayer`) `.kct` from `sample_paths` by a k-way streami
 Samples are counted in waves, bucketed by k-mer prefix into shard files, folded into
 prefix-sharded partial tables, then combined by a hierarchical k-way merge and assembled
 into one `.kct`. Nothing dense is ever resident, so peak memory stays flat across the
-whole build.
+whole build. Each partial is merged upward as soon as `merge_fanin` siblings are ready
+rather than after the last wave, so partial storage on disk stays at O(`merge_fanin`)
+waves instead of growing with the cohort.
 
 # Keyword Arguments
 - `K`: nucleotide k-mer length. `chunks` is the read-chunk size passed to the counter
@@ -397,8 +399,13 @@ function build_kct_streaming(sample_paths::Vector{String};
 
     work = joinpath(out_dir, "streaming_work"); mkpath(work)
     rec_root = joinpath(tmp_dir, "neokct_stream_rec_$(getpid())"); mkpath(rec_root)
-    _done(name) = isfile(joinpath(work, name, "DONE"))
-    _mark(name) = touch(joinpath(work, name, "DONE"))
+
+    # DONE markers live in a flat dir, not inside each partial's folder: merges now run
+    # interleaved with the waves, so a wave's folder is deleted long before the build ends
+    # and a marker kept inside it would be lost. Resume must still see that wave as done.
+    mark_dir = joinpath(work, "_markers"); mkpath(mark_dir)
+    _done(name) = isfile(joinpath(mark_dir, name))
+    _mark(name) = touch(joinpath(mark_dir, name))
     covered = Dict{String, Int}()  # partial name -> samples it covers
 
     try
@@ -411,9 +418,12 @@ function build_kct_streaming(sample_paths::Vector{String};
             if !(resume && _done(name))
                 rm(d; recursive = true, force = true); mkpath(d)
                 nS = stream_kct_as_shards(path, first_s, d, keep_shift, P)
+                write(joinpath(mark_dir, name * ".n"), string(nS))  # survives the folder
                 _mark(name)
             end
-            nS = open(io -> (read(io, Int64); read(io, Int64)), joinpath(d, "manifest"))
+            nfile = joinpath(mark_dir, name * ".n")
+            isfile(nfile) || error("seed $si is marked done but $nfile is missing; delete $work and rebuild")
+            nS = parse(Int, read(nfile, String))
             covered[name] = nS; n_prefix += nS
             push!(seed_names, name)
             _log("seed $si: $path -> $nS samples (global $(first_s)..$(n_prefix))")
@@ -421,8 +431,64 @@ function build_kct_streaming(sample_paths::Vector{String};
 
         # waves
         n_waves = cld(length(sample_paths), wave_size)
-        wave_names = String[]
-        total_samples = n_prefix
+        wave_names = ["wave_$(w)" for w in 1:n_waves]
+        final_total = n_prefix + length(sample_paths)
+
+        # The whole merge tree over every leaf, known up front: node names, inputs and
+        # sample coverage are a pure function of the seed + wave list, so `covered` can be
+        # filled in now and never depends on a folder that a merge has since deleted.
+        for w in 1:n_waves
+            lo = (w - 1) * wave_size + 1
+            hi = min(w * wave_size, length(sample_paths))
+            covered["wave_$(w)"] = hi - lo + 1
+        end
+        plan, roots = _merge_plan(vcat(seed_names, wave_names), merge_fanin)
+        for (out, ins) in plan
+            covered[out] = sum(covered[i] for i in ins)
+        end
+
+        # Run one merge node: k-way merge its inputs per shard, mark it, delete the inputs.
+        tripped = Ref(false)
+        function _run_merge_node!(out::String, ins::Vector{String})
+            od = joinpath(work, out)
+            rm(od; recursive = true, force = true); mkpath(od)
+            _log("  merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples)")
+            for p in 0:(P - 1)
+                shards = _PartialShard[_read_partial_shard(joinpath(work, i, "shard$(p).bin")) for i in ins]
+                _write_partial_shard(joinpath(od, "shard$(p).bin"), _merge_partial_shards(shards))
+            end
+            _mark(out)
+            for i in ins
+                rm(joinpath(work, i); recursive = true, force = true)
+            end
+            if !tripped[] && startswith(out, "super_L1_")
+                tripped[] = true
+                pb = _partial_pool_bytes(od, P)
+                proj = pb * (final_total / covered[out]) / 1e9
+                _log("row-pool tripwire: $(round(pb / 1e9; digits = 2)) GB over $(covered[out]) samples " *
+                        "-> ~$(round(proj; digits = 1)) GB projected at $final_total samples")
+                proj > max_pool_gb && error("projected row pool ~$(round(proj; digits = 1)) GB exceeds " *
+                    "max_pool_gb=$max_pool_gb; row diversity is higher than expected (see plan fallback)")
+            end
+        end
+
+        # Fire every merge node whose inputs are all complete, repeatedly, so a finished
+        # L1 immediately unblocks its L2 parent when the siblings were already done.
+        function _drain_ready!()
+            progressed = true
+            while progressed
+                progressed = false
+                for (out, ins) in plan
+                    _done(out) && continue
+                    all(_done(i) for i in ins) || continue
+                    _run_merge_node!(out, ins)
+                    progressed = true
+                end
+            end
+        end
+
+        _drain_ready!()  # resume: collapse whatever the previous run left ready
+
         for w in 1:n_waves
             lo = (w - 1) * wave_size + 1
             hi = min(w * wave_size, length(sample_paths))
@@ -436,41 +502,13 @@ function build_kct_streaming(sample_paths::Vector{String};
                 rm(joinpath(rec_root, name); recursive = true, force = true)
                 _mark(name)
             end
-            covered[name] = hi - lo + 1
-            total_samples = n_prefix + hi
-            push!(wave_names, name)
+            _drain_ready!()
         end
-
-        # hierarchical merge
-        plan, roots = _merge_plan(vcat(seed_names, wave_names), merge_fanin)
-        checked = false
-        for (out, ins) in plan
-            covered[out] = sum(covered[i] for i in ins)
-            od = joinpath(work, out)
-            if !(resume && _done(out))
-                rm(od; recursive = true, force = true); mkpath(od)
-                _log("merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples)")
-                for p in 0:(P - 1)
-                    shards = _PartialShard[_read_partial_shard(joinpath(work, i, "shard$(p).bin")) for i in ins]
-                    _write_partial_shard(joinpath(od, "shard$(p).bin"), _merge_partial_shards(shards))
-                end
-                _mark(out)
-                for i in ins; rm(joinpath(work, i); recursive = true, force = true); end
-            end
-            if !checked && startswith(out, "super_L1_")
-                checked = true
-                pb = _partial_pool_bytes(od, P)
-                proj = pb * (total_samples / covered[out]) / 1e9
-                _log("row-pool tripwire: $(round(pb / 1e9; digits = 2)) GB over $(covered[out]) samples " *
-                        "-> ~$(round(proj; digits = 1)) GB projected at $total_samples samples")
-                proj > max_pool_gb && error("projected row pool ~$(round(proj; digits = 1)) GB exceeds " *
-                    "max_pool_gb=$max_pool_gb; row diversity is higher than expected (see plan fallback)")
-            end
-        end
+        _drain_ready!()
 
         # assemble
-        _log("assembling -> $out_path  ($total_samples samples)")
-        _assemble_v4([joinpath(work, r) for r in roots], P, kk, Ab, idx_prefix, total_samples, out_path)
+        _log("assembling -> $out_path  ($final_total samples)")
+        _assemble_v4([joinpath(work, r) for r in roots], P, kk, Ab, idx_prefix, final_total, out_path)
         rm(work; recursive = true, force = true)
         return out_path
     finally
