@@ -8,6 +8,7 @@ import NArrays: repack
 export repack
 using Dates
 using BitIntegers
+using Mmap
 
 abstract type AbstractLayer end
 

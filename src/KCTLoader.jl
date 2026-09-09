@@ -54,7 +54,7 @@ end
 # Header: [Float64 version][Int64 K][Int64 Ab_name_len][UInt8... Ab_name][UInt8 layers_mask][Int64 n_kmers]
 # KmerLayer: [Int64 sizeof(C)][Int64 sizeof(D)][Int64 cp_interval][Int64 n_cp][Int64 n_rci][C... cps][D... deltas][Int64... rci]
 # CountsLayer       (V3.0, mask bit 0): [Int64 n_samples][Int64 n_flat_cids][Int64 words_len][Int64 bitmap_len][Int64 sizeof(W)][UInt16... n_cids][UInt32... flat_cids][W... words][UInt64... bitmap.chunks]
-# SparseCountsLayer (V4.0, mask bit 0): [Int64 n_samples][Int64 n_rows][Int64 n_pairs][UInt32... row_id (n_kmers)][UInt64... row_offsets (n_rows+1)][UInt32... row_samples (n_pairs)][UInt32... row_counts (n_pairs)]
+# SparseCountsLayer (V4.0, mask bit 0): [Int64 n_samples][Int64 n_kmers][Int32 block_size][Int64 n_blocks][Int64 blob_len][UInt64... block_ptr (n_blocks)][UInt8... blob (blob_len)]
 # BiotypLayer (mask bit 1): [Int64 n_names]([Int64 len][UInt8... name]...)[Int64 pool_len][UInt64... pool][UInt16... ids]
 
 _layers_mask(::Nothing, ::Nothing) = UInt8(0)
@@ -96,14 +96,23 @@ function _write_kct(io::IO, kct::KCT, ::Val{4.0})
     _write_biotype(io, kct.biotype)
 end
 
+# Counts-section header: everything up to but not including the blob bytes. Split out so
+# _assemble_v4 can write the header and then stream a multi-hundred-GB blob straight from a
+# temp file instead of holding it in RAM.
+function _write_sparse_counts_header(io::IO, n_samples::Integer, n_kmers::Integer, block_size::Integer,
+                                     n_blocks::Integer, blob_len::Integer, block_ptr::Vector{UInt64})
+    write(io, Int64(n_samples))
+    write(io, Int64(n_kmers))
+    write(io, Int32(block_size))
+    write(io, Int64(n_blocks))
+    write(io, Int64(blob_len))
+    write(io, block_ptr)
+end
+
 function _write_sparse_counts(io::IO, scl::SparseCountsLayer)
-    write(io, Int64(scl.n_samples.x))
-    write(io, Int64(length(scl.row_offsets) - 1))  # n_rows
-    write(io, Int64(length(scl.row_samples)))  # n_pairs
-    write(io, scl.row_id)
-    write(io, scl.row_offsets)
-    write(io, scl.row_samples)
-    write(io, scl.row_counts)
+    _write_sparse_counts_header(io, scl.n_samples.x, scl.n_kmers.x, scl.block_size,
+                                length(scl.block_ptr), length(scl.blob), scl.block_ptr)
+    write(io, scl.blob)
 end
 
 _write_counts(::IO, ::Nothing) = nothing
@@ -171,13 +180,26 @@ end
 
 function _read_sparse_counts(io::IO, n_kmers::Int64)
     n_samples = read(io, Int64)
-    n_rows = read(io, Int64)
-    n_pairs = read(io, Int64)
-    row_id = Vector{UInt32}(undef, n_kmers); read!(io, row_id)
-    row_offsets = Vector{UInt64}(undef, n_rows + 1); read!(io, row_offsets)
-    row_samples = Vector{UInt32}(undef, n_pairs); read!(io, row_samples)
-    row_counts = Vector{UInt32}(undef, n_pairs); read!(io, row_counts)
-    return SparseCountsLayer(row_id, row_offsets, row_samples, row_counts, Ref(n_samples))
+    nk = read(io, Int64)                       # == n_kmers (header), kept for self-consistency
+    block_size = read(io, Int32)
+    n_blocks = read(io, Int64)
+    blob_len = read(io, Int64)
+    block_ptr = Vector{UInt64}(undef, n_blocks); read!(io, block_ptr)
+    # mmap the blob rather than reading it in: at full cohort it is ~1-2 TB, and a query
+    # touches one block. The mapping outlives `io` being closed. Falls back to a plain read
+    # if mmap is unavailable (e.g. a filesystem that refuses it).
+    blob = if blob_len == 0
+        UInt8[]
+    else
+        try
+            b = Mmap.mmap(io, Vector{UInt8}, Int(blob_len))
+            seek(io, position(io) + blob_len)
+            b
+        catch
+            b = Vector{UInt8}(undef, blob_len); read!(io, b); b
+        end
+    end
+    return SparseCountsLayer(block_size, block_ptr, blob, nk, n_samples)
 end
 
 function _read_counts(io::IO, n_kmers::Int64)

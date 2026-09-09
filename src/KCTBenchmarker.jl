@@ -240,8 +240,9 @@ function benchmark_kct(kct::KCT{K, Ab, CountsLayer}, benchmark_path::String; ful
 end
 
 # V4.0 (SparseCountsLayer) tables: the V3.0 component/plot vocabulary (flat_cids, n_cids,
-# packed words, bitmap) does not apply, so this reports the row-pool components and query
-# speed and appends a compact JSON entry. No CairoMakie plots.
+# packed words, bitmap) does not apply. Rows are packed inline block-FOR with no dedup, so
+# this reports the k-mer sequence store, the block index, the packed blob, and query speed,
+# and appends a compact JSON entry. No CairoMakie plots.
 function benchmark_kct(kct::KCT{K, Ab, SparseCountsLayer}, benchmark_path::String;
                        full_pointer_walkthrough::Bool=false, benchmark_size::Int=100_000_000) where {K, Ab<:Alphabet}
     benchmark_file = benchmark_path * "benchmark_data_v4.json"
@@ -251,16 +252,25 @@ function benchmark_kct(kct::KCT{K, Ab, SparseCountsLayer}, benchmark_path::Strin
     printstyled("Measuring V4.0 KCT components...\n", color=:green)
     n_samples = Int(scl.n_samples.x)
     n_kmers = length(kct.kmer.seqs)
-    n_rows = length(scl.row_offsets) - 1
-    n_pairs = length(scl.row_samples)
+    n_blocks = length(scl.block_ptr)
     checkpoints_bytes = sizeof(eltype(kct.kmer.seqs.checkpoints)) * length(kct.kmer.seqs.checkpoints)
     deltas_bytes = sizeof(eltype(kct.kmer.seqs.deltas)) * length(kct.kmer.seqs.deltas)
     regular_cp_idx_bytes = sizeof(eltype(kct.kmer.seqs.regular_cp_idx)) * length(kct.kmer.seqs.regular_cp_idx)
     kmer_seq_bytes = checkpoints_bytes + deltas_bytes + regular_cp_idx_bytes
-    row_id_bytes = sizeof(UInt32) * n_kmers
-    row_off_bytes = sizeof(UInt64) * length(scl.row_offsets)
-    row_pool_bytes = sizeof(UInt32) * 2 * n_pairs
-    total_bytes = kmer_seq_bytes + row_id_bytes + row_off_bytes + row_pool_bytes
+    block_ptr_bytes = sizeof(UInt64) * n_blocks
+    blob_bytes = length(scl.blob)
+    total_bytes = kmer_seq_bytes + block_ptr_bytes + blob_bytes
+    bytes_per_kmer = total_bytes / max(n_kmers, 1)
+
+    # count pairs cheaply by decoding a sample of blocks and extrapolating
+    sampled = min(n_blocks, 2000)
+    pair_sample = 0
+    for b in (sampled == 0 ? (1:0) : round.(Int, range(0, n_blocks - 1; length = sampled)))
+        for (s, _) in _decode_block(scl, b)
+            pair_sample += length(s)
+        end
+    end
+    est_pairs = sampled == 0 ? 0 : round(Int, pair_sample * (n_blocks / sampled))
 
     k_mers = rand(kct.kmer.seqs.checkpoints, min(benchmark_size, max(1, n_kmers)))
     t_start = now()
@@ -270,16 +280,17 @@ function benchmark_kct(kct::KCT{K, Ab, SparseCountsLayer}, benchmark_path::Strin
     query_time_ms = Dates.value(now() - t_start)
 
     printstyled(
-        "V4.0: $n_kmers k-mers, $n_samples samples, $n_rows rows ($(round(100*n_rows/max(n_kmers,1); digits=2))% of k-mers), " *
-        "$n_pairs pairs\n  kmer_seqs=$(Base.format_bytes(kmer_seq_bytes))  row_id=$(Base.format_bytes(row_id_bytes))  " *
-        "row_pool=$(Base.format_bytes(row_pool_bytes))  total=$(Base.format_bytes(total_bytes))\n", color=:green)
+        "V4.0: $n_kmers k-mers, $n_samples samples, ~$est_pairs pairs, $n_blocks blocks, " *
+        "$(round(bytes_per_kmer; digits=2)) B/k-mer\n  kmer_seqs=$(Base.format_bytes(kmer_seq_bytes))  " *
+        "block_ptr=$(Base.format_bytes(block_ptr_bytes))  blob=$(Base.format_bytes(blob_bytes))  " *
+        "total=$(Base.format_bytes(total_bytes))\n", color=:green)
 
     entry = Dict{String, Any}(
         "samples" => n_samples, "timestamp" => string(now()),
-        "n_kmers" => n_kmers, "n_rows" => n_rows, "n_pairs" => n_pairs,
-        "kmer_seq_bytes" => kmer_seq_bytes, "row_id_bytes" => row_id_bytes,
-        "row_offsets_bytes" => row_off_bytes, "row_pool_bytes" => row_pool_bytes,
-        "total_bytes" => total_bytes, "query_time_ms" => query_time_ms,
+        "n_kmers" => n_kmers, "n_blocks" => n_blocks, "est_pairs" => est_pairs,
+        "kmer_seq_bytes" => kmer_seq_bytes, "block_ptr_bytes" => block_ptr_bytes,
+        "blob_bytes" => blob_bytes, "total_bytes" => total_bytes,
+        "bytes_per_kmer" => bytes_per_kmer, "query_time_ms" => query_time_ms,
     )
     save_benchmark_history!(history, entry, benchmark_file)
     return

@@ -18,7 +18,11 @@ const _STREAM_BITS_PER_NT = 2   # bits_per_symbol(DNAAlphabet{2}())
 
 # println + flush: stdout is block-buffered when redirected to a file, so without the flush
 # a multi-hour wave shows nothing in the log until the buffer fills or the process exits.
-_log(args...) = (println("[", Dates.format(now(), "HH:MM:SS"), "] ", args...); flush(stdout))
+# Locked so the shard-parallel merge/assembly loops don't interleave half-lines.
+const _LOG_LOCK = ReentrantLock()
+_log(args...) = lock(_LOG_LOCK) do
+    println("[", Dates.format(now(), "HH:MM:SS"), "] ", args...); flush(stdout)
+end
 
 # One (k-mer, sample, count) observation, written raw to the wave shard record files.
 struct _StreamRec
@@ -100,11 +104,32 @@ end
 
 ## Wave: count -> shard record files -> partial shards ##
 
+# `counter(path)` reconstructs a CRAM through samtools + a FIFO, and a single transient
+# hiccup there (short read off a busy NFS export, samtools SIGPIPE at EOF, FASTQ desync)
+# used to kill a multi-day build. Retry the sample a few times before giving up, and name it
+# when we do.
+function _count_with_retry(counter, path::AbstractString, slot::Integer, attempts::Int)::Dict{UInt64, UInt32}
+    local err
+    for a in 1:attempts
+        try
+            return counter(path)::Dict{UInt64, UInt32}
+        catch e
+            err = e
+            a < attempts || break
+            _log("  ! sample $slot count failed (attempt $a/$attempts): ", sprint(showerror, e))
+            _log("  ! retrying $(basename(path)) in $(5a)s")
+            sleep(5a)
+        end
+    end
+    error("sample $slot ($path) failed to count after $attempts attempts; last error: " *
+          sprint(showerror, err))
+end
+
 # Runs one wave: counts `paths` (global sample indices first_global .. first_global+len-1),
 # streams records into per-shard files under `rec_dir`, then folds each shard into
 # `out_dir/shard{p}.bin`. `counter(path)::Dict{UInt64,UInt32}`.
 function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, rec_dir::String,
-                   keep_shift::Int, P::Int, counter)
+                   keep_shift::Int, P::Int, counter; count_attempts::Int = 4)
     mkpath(rec_dir)
     mask = UInt64(P - 1)
     flush_at = 1_000_000
@@ -114,7 +139,7 @@ function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, re
         for (li, path) in enumerate(paths)
             slot = UInt32(first_global - 1 + li)
             t0 = time()
-            ht = counter(path)::Dict{UInt64, UInt32}
+            ht = _count_with_retry(counter, path, slot, count_attempts)
             for (k, c) in ht
                 p = _shard_of(k, keep_shift, mask) + 1
                 push!(bufs[p], _StreamRec(k, slot, c))
@@ -217,6 +242,11 @@ function _merge_partial_shards(shards::Vector{_PartialShard})::_PartialShard
     return _PartialShard(out_kmers, out_row_id, rp.offsets, rp.pool_s, rp.pool_c)
 end
 
+# Read shard `p` from every partial dir in `dirs` and merge them. Shards are independent, so
+# a merge node runs one of these per shard across all threads (see _run_merge_node!).
+_merge_one_shard(dirs::Vector{String}, p::Int)::_PartialShard =
+    _merge_partial_shards(_PartialShard[_read_partial_shard(joinpath(d, "shard$(p).bin")) for d in dirs])
+
 ## Hierarchical merge plan ##
 
 # Bottom-up list of (output_name, input_names) super-partials, plus the final root list
@@ -240,32 +270,135 @@ end
 
 ## Assembly of the final .kct ##
 
+const _V4_BLOCK_KMERS = 64  # k-mers per packed block in the SparseCountsLayer
+
+# Merge shard `q` of every root partial into per-k-mer rows, WITHOUT deduplication, in flat
+# CSR form: row i is `flat_s[off[i]:off[i+1]-1]` / `flat_c[...]`. The roots cover disjoint,
+# ascending global-sample ranges and every stored row is already sample-sorted, so a k-mer's
+# full row is its pieces concatenated in root order: no _RowPool, no Dict, no re-sort, and
+# no Vector-per-k-mer (a shard here can hold ~300M k-mers -- that allocation storm was the
+# bottleneck once the dedup dict was gone). `_merge_partial_shards` still does per-k-mer
+# dedup at the wave/super level, where rows are narrow and it keeps the partials small.
+function _merge_shard_rows(root_dirs::Vector{String}, q::Int)
+    shards = _PartialShard[_read_partial_shard(joinpath(d, "shard$(q).bin")) for d in root_dirs]
+    ns = length(shards)
+    cur = ones(Int, ns)
+    lens = Int[length(s.kmers) for s in shards]
+
+    out_k = UInt64[]
+    off = Int[1]
+    flat_s = UInt32[]
+    flat_c = UInt32[]
+
+    while true
+        mink = typemax(UInt64); live = false
+        @inbounds for si in 1:ns
+            if cur[si] <= lens[si]
+                live = true
+                k = shards[si].kmers[cur[si]]
+                k < mink && (mink = k)
+            end
+        end
+        live || break
+
+        @inbounds for si in 1:ns
+            (cur[si] <= lens[si] && shards[si].kmers[cur[si]] == mink) || continue
+            sh = shards[si]
+            r = sh.row_id[cur[si]]
+            rng = sh.offsets[r]:(sh.offsets[r + 1] - 1)
+            append!(flat_s, @view sh.pool_s[rng])
+            append!(flat_c, @view sh.pool_c[rng])
+            cur[si] += 1
+        end
+        push!(out_k, mink)
+        push!(off, length(flat_s) + 1)
+    end
+    return out_k, off, flat_s, flat_c
+end
+
+# Transcode the merged root partials into one V4.0 table: for every k-mer in global sorted
+# order, take its (sample, count) row and pack it inline into a block. No cross-k-mer dedup.
+# The packed blob is streamed to a temp file next to `out_path` and copied into the .kct at
+# the end, so RAM holds only the k-mer array, the block index and one merge window -- at
+# full cohort the blob itself is ~1-2 TB. Per-shard merges run in a bounded parallel window;
+# the pack loop is serial because block order = k-mer order.
 function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_prefix::Int,
                      total_samples::Int, out_path::String)
-    all_kmers = UInt64[]
-    all_row_id = UInt32[]
-    grp = _RowPool()
+    B = _V4_BLOCK_KMERS
+    blobtmp = string(out_path, ".blob.tmp")
+    rm(blobtmp; force = true)
 
-    for p in 0:(P - 1)
-        shards = _PartialShard[_read_partial_shard(joinpath(d, "shard$(p).bin")) for d in root_dirs]
-        m = _merge_partial_shards(shards)
-        append!(all_kmers, m.kmers)
-        @inbounds for c in eachindex(m.kmers)
-            r = m.row_id[c]
-            pairs = Tuple{UInt32, UInt32}[]
-            for t in m.offsets[r]:(m.offsets[r + 1] - 1)
-                push!(pairs, (m.pool_s[t], m.pool_c[t]))
+    all_kmers = UInt64[]
+    block_ptr = UInt64[]
+    npairs = 0
+    blob_len = 0
+    W = clamp(Threads.nthreads(), 1, 8)
+
+    open(blobtmp, "w") do bio
+        blobbuf = UInt8[]
+        # current partial block, flat: row j is pend_s[pend_off[j]:pend_off[j+1]-1]
+        pend_s = UInt32[]; pend_c = UInt32[]; pend_off = Int[1]
+        function flush_block!()
+            n = length(pend_off) - 1
+            n == 0 && return
+            push!(block_ptr, UInt64(blob_len))
+            before = length(blobbuf)
+            _pack_block!(blobbuf, pend_s, pend_c, pend_off, n)
+            blob_len += length(blobbuf) - before
+            empty!(pend_s); empty!(pend_c); resize!(pend_off, 1)  # pend_off[1] stays 1
+            if length(blobbuf) >= (1 << 26)
+                write(bio, blobbuf); empty!(blobbuf)
             end
-            push!(all_row_id, _intern_row!(grp, pairs))
         end
+
+        p = 0
+        while p < P
+            chunk = p:min(p + W - 1, P - 1)
+            tasks = [Threads.@spawn _merge_shard_rows(root_dirs, q) for q in chunk]
+            for t in tasks
+                ks, roff, fs, fc = fetch(t)
+                append!(all_kmers, ks)
+                @inbounds for i in eachindex(ks)
+                    a = roff[i]; b = roff[i + 1] - 1
+                    npairs += (b - a + 1)
+                    append!(pend_s, @view fs[a:b])
+                    append!(pend_c, @view fc[a:b])
+                    push!(pend_off, length(pend_s) + 1)
+                    length(pend_off) - 1 == B && flush_block!()
+                end
+            end
+            p += W
+            _log("  assemble: $(min(p, P))/$P shards packed, $(length(all_kmers)) k-mers, " *
+                 "$(Base.format_bytes(blob_len)) blob")
+        end
+        flush_block!()
+        isempty(blobbuf) || write(bio, blobbuf)
     end
 
+    n_kmers = length(all_kmers)
     seqs = DeltaArray{UInt64, UInt32}(all_kmers, DEFAULT_CHECKPOINT_INTERVAL)  # already globally sorted
+    all_kmers = UInt64[]  # ~8*n_kmers freed before the write
     kl = KmerLayer{kk, Ab, UInt64, UInt32}(seqs, _empty_kmer_idx(kk, Ab(), UInt64; prefix_size = idx_prefix))
-    scl = SparseCountsLayer(all_row_id, grp.offsets, grp.pool_s, grp.pool_c, Ref(Int64(total_samples)))
+    scl = SparseCountsLayer(B, block_ptr, UInt8[], n_kmers, total_samples)  # blob stays on disk
     kct = KCT(kl, scl)
     compute_index!(kct.kmer; prefix_size = idx_prefix)
-    write_kct(kct, out_path)
+    _log("  assembled: $n_kmers k-mers, $npairs pairs, blob $(Base.format_bytes(blob_len)), " *
+         "block_ptr $(Base.format_bytes(8 * length(block_ptr)))")
+
+    open(out_path, "w") do io
+        write(io, 4.0)
+        _write_header_and_kmers(io, kct)
+        _write_sparse_counts_header(io, total_samples, n_kmers, B, length(block_ptr), blob_len, block_ptr)
+        open(blobtmp, "r") do bin
+            buf = Vector{UInt8}(undef, 1 << 26)
+            while !eof(bin)
+                n = readbytes!(bin, buf)
+                write(io, view(buf, 1:n))
+            end
+        end
+        _write_biotype(io, nothing)
+    end
+    rm(blobtmp; force = true)
     return out_path
 end
 
@@ -285,11 +418,13 @@ function _seed_row_pairs(cl::CountsLayer, offsets::Vector{UInt64}, i::Int, base:
     return pairs
 end
 
+# V4.0 source: decode k-mer i's inline row. Decodes its whole block, so a full seed walk is
+# O(block_size) per k-mer; acceptable for the occasional seed fold.
 function _seed_row_pairs(scl::SparseCountsLayer, ::Nothing, i::Int, base::Int)
-    r = scl.row_id[i]
+    s, c = _decode_row(scl, i)
     pairs = Tuple{UInt32, UInt32}[]
-    @inbounds for t in scl.row_offsets[r]:(scl.row_offsets[r + 1] - 1)
-        push!(pairs, (UInt32(base + scl.row_samples[t]), scl.row_counts[t]))
+    @inbounds for j in eachindex(s)
+        push!(pairs, (UInt32(base + s[j]), c[j]))
     end
     return pairs
 end
@@ -374,12 +509,16 @@ waves instead of growing with the cohort.
 - `seeds`: `Vector{Tuple{String,Int}}` of `(existing .kct, first_global_sample)` folded in as
   level-0 partials. Sample ranges must be disjoint and precede the waves
 - `resume`: skips any wave or partial that already has a `DONE` marker
-- `max_pool_gb`: aborts after the first super-partial if the projected row pool exceeds it
+- `count_attempts`: retries per sample when `counter` throws (transient samtools/FIFO/NFS
+  failures), with a linear backoff, before aborting and naming the sample
+- `max_pool_gb`: accepted for CLI compatibility, no longer used (the build logs a size
+  projection after the first super-partial but never aborts)
 """
 function build_kct_streaming(sample_paths::Vector{String};
         K::Int = 30, chunks::Int = 500_000, translate::Bool = false,
         wave_size::Int = 100, shard_bits::Int = 8,
         merge_fanin::Int = 5, max_pool_gb::Real = 400, idx_prefix::Int = -1,
+        count_attempts::Int = 4,
         tmp_dir::String = _STREAM_TMP_DEFAULT, out_dir::String,
         out_path::String = joinpath(out_dir, "neokct_v4.kct"),
         counter = (p -> jello_superthreaded_hash(p, K, chunks; translate = translate)),
@@ -452,10 +591,13 @@ function build_kct_streaming(sample_paths::Vector{String};
         function _run_merge_node!(out::String, ins::Vector{String})
             od = joinpath(work, out)
             rm(od; recursive = true, force = true); mkpath(od)
-            _log("  merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples)")
-            for p in 0:(P - 1)
-                shards = _PartialShard[_read_partial_shard(joinpath(work, i, "shard$(p).bin")) for i in ins]
-                _write_partial_shard(joinpath(od, "shard$(p).bin"), _merge_partial_shards(shards))
+            _log("  merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples), $(Threads.nthreads()) threads")
+            in_dirs = String[joinpath(work, i) for i in ins]
+            ndone = Threads.Atomic{Int}(0)
+            Threads.@threads for p in 0:(P - 1)
+                _write_partial_shard(joinpath(od, "shard$(p).bin"), _merge_one_shard(in_dirs, p))
+                n = Threads.atomic_add!(ndone, 1) + 1
+                (n % 32 == 0 || n == P) && _log("    $out: $n/$P shards")
             end
             _mark(out)
             for i in ins
@@ -463,12 +605,11 @@ function build_kct_streaming(sample_paths::Vector{String};
             end
             if !tripped[] && startswith(out, "super_L1_")
                 tripped[] = true
-                pb = _partial_pool_bytes(od, P)
-                proj = pb * (final_total / covered[out]) / 1e9
-                _log("row-pool tripwire: $(round(pb / 1e9; digits = 2)) GB over $(covered[out]) samples " *
-                        "-> ~$(round(proj; digits = 1)) GB projected at $final_total samples")
-                proj > max_pool_gb && error("projected row pool ~$(round(proj; digits = 1)) GB exceeds " *
-                    "max_pool_gb=$max_pool_gb; row diversity is higher than expected (see plan fallback)")
+                pb = _partial_pool_bytes(od, P)                  # unpacked (sample,count) bytes here
+                raw = pb * (final_total / covered[out]) / 1e9
+                # V4.0 packs the pool block-FOR (~5-8x) and never expands it globally.
+                _log("pool projection from $out: ~$(round(raw; digits = 1)) GB unpacked / " *
+                     "~$(round(raw / 6; digits = 1)) GB packed (est.) at $final_total samples")
             end
         end
 
@@ -498,7 +639,7 @@ function build_kct_streaming(sample_paths::Vector{String};
                 rm(d; recursive = true, force = true); mkpath(d)
                 _log("wave $w/$n_waves: samples $(lo)..$(hi) (global $(first_global)..$(n_prefix + hi))")
                 _run_wave(sample_paths[lo:hi], first_global, d, joinpath(rec_root, name),
-                          keep_shift, P, counter)
+                          keep_shift, P, counter; count_attempts = count_attempts)
                 rm(joinpath(rec_root, name); recursive = true, force = true)
                 _mark(name)
             end

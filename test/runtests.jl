@@ -403,17 +403,16 @@ end
 
     @testset "sparsity: only present samples are stored" begin
       _, kct = stream_build(wave_size = 2, shard_bits = 2, merge_fanin = 2)
-      scl = kct.counts
-      # K5 is present in exactly samples 3 and 5 -> its row has exactly 2 pairs
-      r = scl.row_id[findfirst(kct.kmer, K5)]
-      @test scl.row_offsets[r + 1] - scl.row_offsets[r] == 2
-      # K1 present in 4 of 6 samples -> 4 pairs (no zeros stored)
-      r1 = scl.row_id[findfirst(kct.kmer, K1)]
-      @test scl.row_offsets[r1 + 1] - scl.row_offsets[r1] == 4
+      # K5 is present in exactly samples 3 and 5 -> its reconstructed vector has 2 non-zeros
+      v5 = kct.counts[findfirst(kct.kmer, K5)]
+      @test length(v5) == 6
+      @test count(!iszero, v5) == 2
+      # K1 present in 4 of 6 samples -> 4 non-zeros, no stored zeros
+      @test count(!iszero, kct.counts[findfirst(kct.kmer, K1)]) == 4
     end
 
-    @testset "row deduplication" begin
-      # A,B,C,D all == count 4 in sample 1 only, so they must collapse to one pooled row.
+    @testset "identical count vectors reconstruct identically" begin
+      # V4.0 no longer deduplicates rows; identical vectors must still round-trip identically.
       A = UInt64(0x00001); B = UInt64(0x00002); C = UInt64(0x40001)
       Dk = UInt64(0x80001); E = UInt64(0xC0001)
       d1 = Dict{UInt64, UInt32}(A => 4, B => 4, C => 4, Dk => 4, E => 9)
@@ -424,12 +423,11 @@ end
                                      merge_fanin = 2, tmp_dir = tmp, out_dir = out,
                                      counter = (p -> deepcopy(cm[p]))))
       end; end
-      rid = x -> kct.counts.row_id[findfirst(kct.kmer, x)]
-      @test rid(A) == rid(B) == rid(C) == rid(Dk)
-      @test rid(E) != rid(A)
-      @test length(kct.counts.row_offsets) - 1 == 2  # exactly two distinct rows
+      cv = x -> kct.counts[findfirst(kct.kmer, x)]
+      @test cv(A) == cv(B) == cv(C) == cv(Dk) == UInt32[4, 0]
+      @test cv(E) == UInt32[9, 9]
       for x in (A, B, C, Dk, E)
-        @test kct.counts[findfirst(kct.kmer, x)] == UInt32[get(d1, x, UInt32(0)), get(d2, x, UInt32(0))]
+        @test cv(x) == UInt32[get(d1, x, UInt32(0)), get(d2, x, UInt32(0))]
       end
     end
 
