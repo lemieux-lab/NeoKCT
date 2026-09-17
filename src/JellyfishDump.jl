@@ -1,26 +1,8 @@
 using JSON
 
-# Parses Jellyfish's own binary output (NOT this project's `JelloFish.jl` counter):
-# the "binary/sorted" format `jellyfish count` writes its `.jf` file in, also what
-# `jellyfish dump` reproduces when called without `-c`/`--column` or `--fasta`.
-#
-# On-disk layout: a decimal byte-offset, then a `{`-delimited JSON header (the
-# offset is measured from just after the header's opening `{`), then a flat run
-# of fixed-size records. Each record is a k-mer key immediately followed by its
-# count, read back with `read(io, UInt64)`-equivalent (native) byte order. When
-# a k-mer's `K*2` bits and the counter's bits together still fit in one 64-bit
-# word, both are packed into a single 8-byte record instead of two separate
-# fields, matching how Kmers.jl itself packs a k-mer right-aligned in a UInt64
-# (data in the low `K*symbol_size` bits, zero padding above, verified against
-# `Kmer{DNAAlphabet{2},4}(LongDNA{2}("ACGT")).data[1] == 0b00011011`), which
-# leaves room for the counter in the untouched high bits with no overlap.
-#
-# This reproduces (safety- and efficiency-hardened, see below) a parser that was
-# already validated against real Jellyfish output in an earlier NeoKCT version.
-# The record math (branch condition, shift amounts) is intentionally unchanged.
-# If you're parsing an unfamiliar Jellyfish build/version for the first time,
-# spot-check a handful of entries against `jellyfish dump -c <file>` (see
-# `verify_jellyfish_dump` below) before trusting a full production parse.
+# Parses Jellyfish's own binary dump format (NOT this project's `JelloFish.jl` counter).
+# See ARCHITECTURE.md for the on-disk layout and the packed-record bit math. Before trusting
+# an unfamiliar Jellyfish build/version, spot-check with `verify_jellyfish_dump` below.
 
 @inline function _read_le_u64(buf::AbstractVector{UInt8}, o::Int)::UInt64
     v = UInt64(0)
@@ -38,12 +20,8 @@ end
     return v
 end
 
-# Zeroes the high `64 - K*symbol_size` unused/padding bits so the raw word is a
-# clean, directly-comparable stand-in for a properly-constructed Kmer's
-# `.data[1]`. Kmers.jl packs k-mers right-aligned (low bits = data, high bits
-# = zero padding, verified against Kmer{DNAAlphabet{2},4}(LongDNA{2}("ACGT")).
-# data[1] == 0b00011011). Needed since the raw word is used as a Dict key and,
-# downstream, sorted and compared as a raw UInt64 by KmerLayer.
+# Zeroes the high padding bits so the raw word matches a real Kmer's right-aligned `.data[1]`
+# (needed since it's used as a Dict key and later sorted/compared as a raw UInt64).
 @inline function _clean_kmer_bits(bits::UInt64, K::Int, symbol_size::Int)::UInt64
     used = K * symbol_size
     mask = used >= 64 ? typemax(UInt64) : (UInt64(1) << used) - UInt64(1)
@@ -88,9 +66,8 @@ function read_jf_header(io::IO)
     header_start = position(io) - 1  # position of the '{' consumed by readuntil
     seek(io, header_start)
 
-    # `offset` bytes, read as a String rather than handed to JSON.parse(::IO) directly: this
-    # JSON.jl parses a whole IO stream as a single document and errors on anything non-whitespace
-    # trailing the value, which the binary record data immediately following the header would trip.
+    # Read as a String rather than JSON.parse(::IO): the latter errors on trailing
+    # non-whitespace, which the binary record data right after the header would trip.
     header_bytes = Vector{UInt8}(undef, offset)
     read!(io, header_bytes)
     header_str = rstrip(c -> c == '\0' || isspace(c), String(header_bytes))

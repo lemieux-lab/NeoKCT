@@ -10,4 +10,5 @@ build_kct_gtex_cram.sh
 build_kct_gtex_cram_streaming.jl
 build_kct_gtex_cram_streaming.sh
 gen_gtex_cram_samples.sh
+build_*
 benchmarks/

@@ -1,18 +1,9 @@
-## Streaming k-way merge builder -> .kct V4.0 (SparseCountsLayer) ##
+## Streaming k-way merge builder -> .kct V4.0 (CountsLayer) ##
 #
-# From-scratch build for large sample sets that the incremental push!/collapse! path cannot
-# reach. Samples are counted in waves. Each wave's k-mers are bucketed by prefix into shard
-# record files, sorted, and folded into a prefix-sharded "partial" table (sorted k-mers plus
-# a per-shard deduplicated pool of sparse (sample, count) rows). Partials are combined by a
-# hierarchical k-way merge and the survivors are assembled into one V4.0 .kct.
-#
-# Nothing dense is ever resident: every stage streams one k-mer (one short row) at a time.
-# Peak memory is a wave's k-mer hash-table + one shard, flat across the whole build.
-
-# The streaming builder is alphabet-generic: everything downstream of the counter works on
-# raw UInt64 k-mer codes. Only the prefix shard shift and the final KmerLayer construction
-# need the alphabet, and both are derived from `translate` (see build_kct_streaming): DNA
-# gives KCT{K, DNAAlphabet{2}}, translate gives KCT{K÷3, AAAlphabet}.
+# External merge sort for cohorts too large for push!/collapse! (see ARCHITECTURE.md for the
+# full pipeline: wave count -> shard scatter -> fold -> interleaved hierarchical merge ->
+# streaming assembly). Alphabet-generic below the counter; only the shard shift and the
+# final KmerLayer need `translate` (DNA -> KCT{K,DNAAlphabet{2}}, AA -> KCT{K÷3,AAAlphabet}).
 const _STREAM_BITS_PER_AA = 5   # bits_per_symbol(AAAlphabet())
 const _STREAM_BITS_PER_NT = 2   # bits_per_symbol(DNAAlphabet{2}())
 
@@ -104,10 +95,8 @@ end
 
 ## Wave: count -> shard record files -> partial shards ##
 
-# `counter(path)` reconstructs a CRAM through samtools + a FIFO, and a single transient
-# hiccup there (short read off a busy NFS export, samtools SIGPIPE at EOF, FASTQ desync)
-# used to kill a multi-day build. Retry the sample a few times before giving up, and name it
-# when we do.
+# A transient counter failure (busy-NFS short read, samtools SIGPIPE, FIFO desync) used to
+# kill a multi-day build outright; retry a few times before giving up and naming the sample.
 function _count_with_retry(counter, path::AbstractString, slot::Integer, attempts::Int)::Dict{UInt64, UInt32}
     local err
     for a in 1:attempts
@@ -270,15 +259,13 @@ end
 
 ## Assembly of the final .kct ##
 
-const _V4_BLOCK_KMERS = 64  # k-mers per packed block in the SparseCountsLayer
+const _V4_BLOCK_KMERS = 64  # k-mers per packed block in the CountsLayer
 
 # Merge shard `q` of every root partial into per-k-mer rows, WITHOUT deduplication, in flat
-# CSR form: row i is `flat_s[off[i]:off[i+1]-1]` / `flat_c[...]`. The roots cover disjoint,
-# ascending global-sample ranges and every stored row is already sample-sorted, so a k-mer's
-# full row is its pieces concatenated in root order: no _RowPool, no Dict, no re-sort, and
-# no Vector-per-k-mer (a shard here can hold ~300M k-mers -- that allocation storm was the
-# bottleneck once the dedup dict was gone). `_merge_partial_shards` still does per-k-mer
-# dedup at the wave/super level, where rows are narrow and it keeps the partials small.
+# CSR form (row i is `flat_s[off[i]:off[i+1]-1]` / `flat_c[...]`, no Vector-per-k-mer).
+# Roots cover disjoint, ascending sample ranges and are already sample-sorted, so a k-mer's
+# row is just its per-root pieces concatenated (see ARCHITECTURE.md for why no dedup here,
+# unlike `_merge_partial_shards` at the wave/super level).
 function _merge_shard_rows(root_dirs::Vector{String}, q::Int)
     shards = _PartialShard[_read_partial_shard(joinpath(d, "shard$(q).bin")) for d in root_dirs]
     ns = length(shards)
@@ -316,12 +303,10 @@ function _merge_shard_rows(root_dirs::Vector{String}, q::Int)
     return out_k, off, flat_s, flat_c
 end
 
-# Transcode the merged root partials into one V4.0 table: for every k-mer in global sorted
-# order, take its (sample, count) row and pack it inline into a block. No cross-k-mer dedup.
-# The packed blob is streamed to a temp file next to `out_path` and copied into the .kct at
-# the end, so RAM holds only the k-mer array, the block index and one merge window -- at
-# full cohort the blob itself is ~1-2 TB. Per-shard merges run in a bounded parallel window;
-# the pack loop is serial because block order = k-mer order.
+# Transcode the merged root partials into one V4.0 table, packing each k-mer's row inline.
+# The blob streams to a temp file next to `out_path` rather than staying resident (it can be
+# 1-2 TB at full cohort, see ARCHITECTURE.md); RAM holds the k-mer array, block index and one
+# merge window. Per-shard merges run in a bounded parallel window; the pack loop is serial.
 function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_prefix::Int,
                      total_samples::Int, out_path::String)
     B = _V4_BLOCK_KMERS
@@ -379,8 +364,8 @@ function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_
     seqs = DeltaArray{UInt64, UInt32}(all_kmers, DEFAULT_CHECKPOINT_INTERVAL)  # already globally sorted
     all_kmers = UInt64[]  # ~8*n_kmers freed before the write
     kl = KmerLayer{kk, Ab, UInt64, UInt32}(seqs, _empty_kmer_idx(kk, Ab(), UInt64; prefix_size = idx_prefix))
-    scl = SparseCountsLayer(B, block_ptr, UInt8[], n_kmers, total_samples)  # blob stays on disk
-    kct = KCT(kl, scl)
+    cl = CountsLayer(B, block_ptr, UInt8[], n_kmers, total_samples)  # blob stays on disk
+    kct = KCT(kl, cl)
     compute_index!(kct.kmer; prefix_size = idx_prefix)
     _log("  assembled: $n_kmers k-mers, $npairs pairs, blob $(Base.format_bytes(blob_len)), " *
          "block_ptr $(Base.format_bytes(8 * length(block_ptr)))")
@@ -388,7 +373,7 @@ function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_
     open(out_path, "w") do io
         write(io, 4.0)
         _write_header_and_kmers(io, kct)
-        _write_sparse_counts_header(io, total_samples, n_kmers, B, length(block_ptr), blob_len, block_ptr)
+        _write_counts_header(io, total_samples, n_kmers, B, length(block_ptr), blob_len, block_ptr)
         open(blobtmp, "r") do bin
             buf = Vector{UInt8}(undef, 1 << 26)
             while !eof(bin)
@@ -404,24 +389,10 @@ end
 
 ## Seed adapter: an existing .kct -> a level-0 partial ##
 
-# Sparse (global_slot, count) pairs for k-mer i of a V3.0 CountsLayer, using precomputed
-# CSR offsets (assemble_count_vector is O(i) per call, unusable in a full-table loop).
-function _seed_row_pairs(cl::CountsLayer, offsets::Vector{UInt64}, i::Int, base::Int)
-    vals = UInt32[]
-    for c in @view cl.flat_cids[offsets[i]:(offsets[i + 1] - 1)]
-        append!(vals, cl.counts[Int(c)])
-    end
-    pairs = Tuple{UInt32, UInt32}[]
-    @inbounds for (s, v) in enumerate(vals)
-        v != 0 && push!(pairs, (UInt32(base + s), v))
-    end
-    return pairs
-end
-
-# V4.0 source: decode k-mer i's inline row. Decodes its whole block, so a full seed walk is
-# O(block_size) per k-mer; acceptable for the occasional seed fold.
-function _seed_row_pairs(scl::SparseCountsLayer, ::Nothing, i::Int, base::Int)
-    s, c = _decode_row(scl, i)
+# Sparse (global_slot, count) pairs for k-mer i: decode its inline row. Decodes the whole
+# block, so a full seed walk is O(block_size) per k-mer; acceptable for the occasional seed fold.
+function _seed_row_pairs(cl::CountsLayer, i::Int, base::Int)
+    s, c = _decode_row(cl, i)
     pairs = Tuple{UInt32, UInt32}[]
     @inbounds for j in eachindex(s)
         push!(pairs, (UInt32(base + s[j]), c[j]))
@@ -436,8 +407,7 @@ function stream_kct_as_shards(kct_path::String, first_global_sample::Int, out_di
     kct = load_kct(kct_path)
     counts = kct.counts
     counts === nothing && error("seed KCT has no counts layer: $kct_path")
-    n_src = counts isa CountsLayer ? Int(counts.samples.x) : Int(counts.n_samples.x)
-    v3_offsets = counts isa CountsLayer ? _kmer_offsets(counts.n_cids) : nothing
+    n_src = Int(counts.n_samples.x)
     base = first_global_sample - 1
 
     kmers = [UInt64[] for _ in 0:(P - 1)]
@@ -449,7 +419,7 @@ function stream_kct_as_shards(kct_path::String, first_global_sample::Int, out_di
     while it !== nothing
         kbits, st = it
         p = _shard_of(kbits, keep_shift, mask) + 1
-        pairs = _seed_row_pairs(counts, v3_offsets, i, base)
+        pairs = _seed_row_pairs(counts, i, base)
         sort!(pairs; by = first)
         push!(kmers[p], kbits)
         push!(rids[p], _intern_row!(rps[p], pairs))
@@ -489,7 +459,7 @@ const _STREAM_TMP_DEFAULT = get(ENV, "NEOKCT_STREAM_TMP", "/scratch")
 """
     build_kct_streaming(sample_paths; out_dir, kwargs...) -> out_path
 
-Build a V4.0 (`SparseCountsLayer`) `.kct` from `sample_paths` by a k-way streaming merge.
+Build a V4.0 (`CountsLayer`) `.kct` from `sample_paths` by a k-way streaming merge.
 Samples are counted in waves, bucketed by k-mer prefix into shard files, folded into
 prefix-sharded partial tables, then combined by a hierarchical k-way merge and assembled
 into one `.kct`. Nothing dense is ever resident, so peak memory stays flat across the

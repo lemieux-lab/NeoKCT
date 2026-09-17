@@ -12,9 +12,8 @@ using Base.Threads
 include("BioParser.jl")
 include("AAAlphabet.jl")
 
-# Parallel k-mer counter. Streams a FASTQ (or other bio file) in chunks, counts each chunk
-# on its own thread as amino-acid k-mers, and folds the per-chunk hash-tables together as
-# they finish. The entry point is jello_superthreaded_hash.
+# Parallel k-mer counter. Streams a bio file in chunks, counts each chunk on its own thread,
+# and folds the per-chunk hash-tables together as they finish. Entry point: jello_superthreaded_hash.
 
 # 2-bit code (0..3) for a nucleic acid.
 function twobit(n::NucleicAcid)::UInt8
@@ -66,13 +65,9 @@ end
 
 ## Fast rolling counter ##
 
-#= The `translate` + `k_merize` path above allocates a Vector{Kmer} per read and constructs
-a fresh Kmer per position, which at ~1e10 read-k-mers per sample is the whole runtime. The
-counter below rolls a 2-bit code one base at a time with nothing allocated in the inner
-loop. `translate=false` emits the raw nucleotide K-mer code, `translate=true` folds the
-K-nt window through a 64-entry codon table into a 5*(K/3)-bit AA code. AA output is
-bit-identical to `translate(k_merize(...))` (same codon table, same stop-drop, same symbol
-order), so tables built either way stay comparable. =#
+# Allocation-free counter: rolls a 2-bit code one base at a time instead of allocating a
+# Kmer per position (see ARCHITECTURE.md). `translate=false` emits the raw nucleotide code,
+# `translate=true` folds it to a 5*(K/3)-bit AA code, bit-identical to `translate(k_merize(...))`.
 
 # ASCII byte -> 2-bit code (A/a=0 C/c=1 G/g=2 T/t=3), 0xff for anything else.
 const _NT2BIT = let t = fill(0xff, 256)
@@ -117,11 +112,8 @@ end
     return false
 end
 
-# Read through a bio file (see BioParser), filling fixed-size chunks of reads. Each full
-# chunk is handed to a spawned task for counting; the leftover partial chunk is flushed at
-# EOF. `max_inflight` caps concurrently-running count tasks: the reader blocks on the
-# semaphore once that many are outstanding, so ingestion cannot outrun counting. Blocks
-# until every counting task has finished.
+# Streams a bio file in fixed-size chunks, one spawned counting task per chunk, gated by a
+# semaphore so the reader can't outrun the counters (see ARCHITECTURE.md). Blocks until done.
 function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}},
                       chunking::Int=1_000_000; translate::Bool=false,
                       max_inflight::Int=max(2, Threads.nthreads()), verbose::Bool=false)

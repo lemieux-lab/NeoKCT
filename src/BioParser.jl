@@ -6,11 +6,8 @@ end
 using GZip
 using EzXML
 
-# One reader for every input format the pipeline touches: plain and gzipped FASTQ, FASTA,
-# GTF, GFF3, and mzid. `stream(path)` picks the parser from the extension (looking one
-# level past `.gz`) and returns an iterable of records. FASTQ and FASTA yield sequence
-# strings or `FastaRecord`s, GTF and GFF3 yield feature records with parsed attributes, and
-# mzid yields the `<Seq>` peptide strings.
+# One reader for every input format the pipeline touches. `stream(path)` picks the parser
+# from the extension (one level past `.gz`) and returns an iterable of records.
 
 abstract type Fq end
 

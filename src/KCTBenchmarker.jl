@@ -1,4 +1,3 @@
-using CairoMakie
 using JSON
 
 # Loading previous history file
@@ -15,250 +14,31 @@ function save_benchmark_history!(history::Vector{Any}, entry::Dict{String, Any},
     end
 end
 
-# Plots individual component sizes of a KCT
-function plot_component_sizes(
-    n_samples::Int,
-    kmer_seq_bytes::Int,
-    chunk_ids_bytes::Int,
-    n_cids_bytes::Int,
-    count_words_bytes::Int,
-    bitmap_bytes::Int;
-    full_pointer_walkthrough::Bool = false,
-    kct = nothing
-)
-    printstyled("Plotting Component Sizes...\n", color=:green)
-    f = Figure()
-    xs = ["K-mers", "Indexes", "Δ-Positions", "Counts", "Bitmap"]
-    ys = [kmer_seq_bytes, chunk_ids_bytes, n_cids_bytes, count_words_bytes, bitmap_bytes]
-    Axis(f[1, 1],
-         title = "$(n_samples) Samples NeoKCT - Component Sizes",
-         subtitle = "Total Components Size: $(Base.format_bytes(sum(ys)))" *
-                    (full_pointer_walkthrough && kct !== nothing ?
-                     " - [Full Pointers Walkthrough: $(Base.format_bytes(Base.summarysize(kct)))]" : ""),
-         ylabel = "Size (Bytes)",
-         xticks = (1:length(xs), xs))
-    barplot!(ys, color = ys, strokecolor = :black, strokewidth = 1, bar_labels = ys)
-    return f
-end
-
-# Plots growth of counts words/bitmap with added samples
-function plot_counts_growth(history::Vector{Any})
-    printstyled("Plotting counts size growth...\n", color=:green)
-    all_samples = [e["samples"] for e in history]
-    count_words_hist = [e["count_words_bytes"] for e in history]
-    bitmap_hist = [e["bitmap_bytes"] for e in history]
-    f = Figure()
-    ax = Axis(f[1, 1],
-              title = "Count Table Size Over Samples",
-              xlabel = "Sample Count",
-              ylabel = "Size (Bytes)")
-    lines!(ax, all_samples, count_words_hist, label = "Count Words (words)", color = :blue)
-    scatter!(ax, all_samples, count_words_hist, color = :blue)
-    lines!(ax, all_samples, bitmap_hist, label = "Bitmap (bitmap)", color = :orange)
-    scatter!(ax, all_samples, bitmap_hist, color = :orange)
-    axislegend(ax, position = :lt)
-    return f
-end
-
-# Plot growth of seqs/n_cids/cids with added samples
-function plot_table_growth(history::Vector{Any})
-    printstyled("Plotting table size growth...\n", color=:green)
-    all_samples = [e["samples"] for e in history]
-    chunk_ids_hist = [e["chunk_ids_bytes"] for e in history]
-    kmer_seq_hist = [e["kmer_seq_bytes"] for e in history]
-    n_cids_hist = [e["n_cids_bytes"] for e in history]
-    f = Figure()
-    ax = Axis(f[1, 1],
-              title = "CSR Table Sizes Over Samples",
-              xlabel = "Sample Count",
-              ylabel = "Size (Bytes)")
-    lines!(ax, all_samples, chunk_ids_hist, label = "Chunk IDs (flat_cids)", color = :olive)
-    scatter!(ax, all_samples, chunk_ids_hist, color = :olive)
-    lines!(ax, all_samples, kmer_seq_hist, label = "K-mer Sequences (seqs)", color = :darkgreen)
-    scatter!(ax, all_samples, kmer_seq_hist, color = :darkgreen)
-    lines!(ax, all_samples, n_cids_hist, label = "Chunk IDs Δ-Positions (n_cids)", color = :lightgreen)
-    scatter!(ax, all_samples, n_cids_hist, color = :lightgreen)
-    axislegend(ax, position = :lt)
-    return f
-end
-
-# Plot time between benchmark calls in history (plots individual & total elapsed)
-function plot_elapsed_time(history::Vector{Any})
-    printstyled("Plotting Elapsed Time...\n", color=:green)
-    all_samples = [e["samples"] for e in history]
-    timestamps = DateTime.(string.(e["timestamp"]) for e in history)
-    delta_samples = all_samples[2:end]
-    delta_hours = [Dates.value(timestamps[i] - timestamps[i-1]) / 3_600_000 for i in 2:length(timestamps)]
-    total_hours = [Dates.value(t - timestamps[1]) / 3_600_000 for t in timestamps]
-    f = Figure(size = (900, 700))
-    ax_delta = Axis(f[1, 1],
-                    title = "Elapsed Time Between Benchmark Calls",
-                    xlabel = "Sample Count",
-                    ylabel = "Elapsed Time (hours)")
-    barplot!(ax_delta, delta_samples, delta_hours, color = :steelblue)
-    ax_total = Axis(f[2, 1],
-                    title = "Total Elapsed Time Since First Benchmark Call",
-                    subtitle = "Time zero measured at $(all_samples[1]) samples",
-                    xlabel = "Sample Count",
-                    ylabel = "Total Time (hours)")
-    lines!(ax_total, all_samples, total_hours, color = :crimson)
-    scatter!(ax_total, all_samples, total_hours, color = :crimson)
-    return f
-end
-
-# Plot progression of query speed of benchark_size
-function plot_query_speed(history::Vector{Any}, benchmark_size::Int)
-    printstyled("Plotting Query Speed...\n", color=:green)
-    all_samples = [e["samples"] for e in history]
-    query_time_hist = [e["query_time_ms"] for e in history]
-    f = Figure()
-    ax = Axis(f[1, 1],
-              title = "Query Speed Over Samples ($benchmark_size k-mer lookups)",
-              xlabel = "Sample Count",
-              ylabel = "Query Time (ms)")
-    lines!(ax, all_samples, query_time_hist, color = :purple)
-    scatter!(ax, all_samples, query_time_hist, color = :purple)
-    return f
-end
-
-# Plot progression of k-mer unicity
-function plot_kmer_cardinality(history::Vector{Any})
-    printstyled("Plotting K-mer Cardinality...\n", color=:green)
-    all_samples = [e["samples"] for e in history]
-    n_kmers_hist = [e["n_kmers"] for e in history]
-    f = Figure()
-    ax = Axis(f[1, 1],
-              title = "Unique K-mer Count Over Samples",
-              subtitle = "Saturation indicates diminishing new k-mers per sample",
-              xlabel = "Sample Count",
-              ylabel = "Unique K-mers")
-    lines!(ax, all_samples, n_kmers_hist, color = :teal)
-    scatter!(ax, all_samples, n_kmers_hist, color = :teal)
-    return f
-end
-
-# Plot progress of DeltaArray components for the k-mer sequences
-function plot_deltaarray_growth(history::Vector{Any})
-    printstyled("Plotting DeltaArray component size growth...\n", color=:green)
-    all_samples = [e["samples"] for e in history]
-    checkpoints_hist = [e["checkpoints_bytes"] for e in history]
-    deltas_hist = [e["deltas_bytes"] for e in history]
-    regular_cp_idx_hist = [e["regular_cp_idx_bytes"] for e in history]
-    f = Figure()
-    ax = Axis(f[1, 1],
-              title = "DeltaArray Component Sizes Over Samples",
-              subtitle = "Deltas directly proportional to k-mers (see cardinality)",
-              xlabel = "K-mer Count",
-              ylabel = "Size (Bytes)")
-    lines!(ax, all_samples, checkpoints_hist, label = "Checkpoints (checkpoints)", color = :red)
-    scatter!(ax, all_samples, checkpoints_hist, color = :red)
-    lines!(ax, all_samples, deltas_hist, label = "Deltas (deltas)", color = :steelblue)
-    scatter!(ax, all_samples, deltas_hist, color = :steelblue)
-    lines!(ax, all_samples, regular_cp_idx_hist, label = "Checkpoint Indices (regular_cp_idx)", color = :gray)
-    scatter!(ax, all_samples, regular_cp_idx_hist, color = :gray)
-    axislegend(ax, position = :lt)
-    return f
-end
-
 """
-    benchmark_kct(kct, benchmark_path; full_pointer_walkthrough=false)
+    benchmark_kct(kct, benchmark_path; full_pointer_walkthrough=false, benchmark_size=100_000_000)
 
-Measure a KCT's component sizes and k-mer query speed, append them to the JSON
-history under `benchmark_path`, and (re)draw the SVG plots. For a V3.0
-(`CountsLayer`) table this covers the DeltaArray parts, `flat_cids`, `n_cids`,
-packed words and bitmap, and writes the growth-over-samples plots once the
-history has more than one entry. `full_pointer_walkthrough=true` adds a full
-`summarysize` pass, which makes the timing numbers unrepresentative but reports
-true retained memory. Called once per batch by `build_kct`.
+Measure a KCT's component sizes and k-mer query speed, and append them to the
+JSON history under `benchmark_path`. Rows are packed inline block-FOR with no
+cross-k-mer dedup, so this reports the k-mer sequence store, the block index,
+the packed blob, and query speed. `full_pointer_walkthrough` is accepted for
+call-site compatibility with the old V3.0 benchmarker but unused here.
 """
-function benchmark_kct(kct::KCT{K, Ab, CountsLayer}, benchmark_path::String; full_pointer_walkthrough::Bool=false) where {K, Ab<:Alphabet}
-    mkpath(benchmark_path * "sizes_benchmarks/")
-    benchmark_file = benchmark_path * "benchmark_data.json"
-    history = load_benchmark_history(benchmark_file)
-
-    printstyled("Measuring KCT components...\n", color=:green)
-    benchmark_size = 100_000_000
-    n_samples = kct.counts.samples.x
-    n_kmers = length(kct.kmer.seqs)
-    checkpoints_bytes = sizeof(eltype(kct.kmer.seqs.checkpoints)) * length(kct.kmer.seqs.checkpoints)
-    deltas_bytes = sizeof(eltype(kct.kmer.seqs.deltas)) * length(kct.kmer.seqs.deltas)
-    regular_cp_idx_bytes = sizeof(eltype(kct.kmer.seqs.regular_cp_idx)) * length(kct.kmer.seqs.regular_cp_idx)
-    kmer_seq_bytes = checkpoints_bytes + deltas_bytes + regular_cp_idx_bytes
-    chunk_ids_bytes = sizeof(UInt32) * length(kct.counts.flat_cids)
-    n_cids_bytes = sizeof(UInt16) * length(kct.counts.n_cids)
-    count_words_bytes = Base.summarysize(kct.counts.counts.words)
-    bitmap_bytes = Base.summarysize(kct.counts.counts.bitmap)
-
-    k_mers = rand(kct.kmer.seqs.checkpoints, benchmark_size)
-    t_start = now()
-    @showprogress "Benchmarking Query Speed for $benchmark_size k-mers..." for k_mer in k_mers
-        findfirst(kct, k_mer)
-    end
-    query_time_ms = Dates.value(now() - t_start)
-
-    printstyled("Updating Benchmark History...\n", color=:green)
-    entry = Dict{String, Any}(
-        "samples" => n_samples,
-        "timestamp" => string(now()),
-        "kmer_seq_bytes" => kmer_seq_bytes,
-        "checkpoints_bytes" => checkpoints_bytes,
-        "deltas_bytes" => deltas_bytes,
-        "regular_cp_idx_bytes" => regular_cp_idx_bytes,
-        "chunk_ids_bytes" => chunk_ids_bytes,
-        "chunk_ids_bytes" => chunk_ids_bytes,
-        "n_cids_bytes" => n_cids_bytes,
-        "count_words_bytes" => count_words_bytes,
-        "bitmap_bytes" => bitmap_bytes,
-        "n_kmers" => n_kmers,
-        "query_time_ms" => query_time_ms
-    )
-    save_benchmark_history!(history, entry, benchmark_file)
-
-    f1 = plot_component_sizes(n_samples,
-                         kmer_seq_bytes, chunk_ids_bytes, n_cids_bytes, count_words_bytes, bitmap_bytes;
-                         full_pointer_walkthrough=full_pointer_walkthrough, kct=kct)
-
-    CairoMakie.save(benchmark_path * "sizes_benchmarks/sizes_benchmark_$(n_samples)_samples.svg", f1)
-
-    length(history) <= 1 && return
-
-    # History dependent plotting
-    f2 = plot_counts_growth(history)
-    CairoMakie.save(benchmark_path * "counts_benchmark.svg", f2)
-    f3 = plot_table_growth(history)
-    CairoMakie.save(benchmark_path * "table_benchmark.svg", f3)
-    f4 = plot_elapsed_time(history)
-    CairoMakie.save(benchmark_path * "elapsed_time_benchmark.svg", f4)
-    f5 = plot_query_speed(history, benchmark_size)
-    CairoMakie.save(benchmark_path * "query_speed_benchmark.svg", f5)
-    f6 = plot_kmer_cardinality(history)
-    CairoMakie.save(benchmark_path * "kmer_cardinality_benchmark.svg", f6)
-    f7 = plot_deltaarray_growth(history)
-    CairoMakie.save(benchmark_path * "deltaarray_benchmark.svg", f7)
-
-    return
-end
-
-# V4.0 (SparseCountsLayer) tables: the V3.0 component/plot vocabulary (flat_cids, n_cids,
-# packed words, bitmap) does not apply. Rows are packed inline block-FOR with no dedup, so
-# this reports the k-mer sequence store, the block index, the packed blob, and query speed,
-# and appends a compact JSON entry. No CairoMakie plots.
-function benchmark_kct(kct::KCT{K, Ab, SparseCountsLayer}, benchmark_path::String;
+function benchmark_kct(kct::KCT{K, Ab, CountsLayer}, benchmark_path::String;
                        full_pointer_walkthrough::Bool=false, benchmark_size::Int=100_000_000) where {K, Ab<:Alphabet}
     benchmark_file = benchmark_path * "benchmark_data_v4.json"
     history = load_benchmark_history(benchmark_file)
-    scl = kct.counts
+    cl = kct.counts
 
-    printstyled("Measuring V4.0 KCT components...\n", color=:green)
-    n_samples = Int(scl.n_samples.x)
+    printstyled("Measuring KCT components...\n", color=:green)
+    n_samples = Int(cl.n_samples.x)
     n_kmers = length(kct.kmer.seqs)
-    n_blocks = length(scl.block_ptr)
+    n_blocks = length(cl.block_ptr)
     checkpoints_bytes = sizeof(eltype(kct.kmer.seqs.checkpoints)) * length(kct.kmer.seqs.checkpoints)
     deltas_bytes = sizeof(eltype(kct.kmer.seqs.deltas)) * length(kct.kmer.seqs.deltas)
     regular_cp_idx_bytes = sizeof(eltype(kct.kmer.seqs.regular_cp_idx)) * length(kct.kmer.seqs.regular_cp_idx)
     kmer_seq_bytes = checkpoints_bytes + deltas_bytes + regular_cp_idx_bytes
     block_ptr_bytes = sizeof(UInt64) * n_blocks
-    blob_bytes = length(scl.blob)
+    blob_bytes = length(cl.blob)
     total_bytes = kmer_seq_bytes + block_ptr_bytes + blob_bytes
     bytes_per_kmer = total_bytes / max(n_kmers, 1)
 
@@ -266,7 +46,7 @@ function benchmark_kct(kct::KCT{K, Ab, SparseCountsLayer}, benchmark_path::Strin
     sampled = min(n_blocks, 2000)
     pair_sample = 0
     for b in (sampled == 0 ? (1:0) : round.(Int, range(0, n_blocks - 1; length = sampled)))
-        for (s, _) in _decode_block(scl, b)
+        for (s, _) in _decode_block(cl, b)
             pair_sample += length(s)
         end
     end
@@ -274,13 +54,13 @@ function benchmark_kct(kct::KCT{K, Ab, SparseCountsLayer}, benchmark_path::Strin
 
     k_mers = rand(kct.kmer.seqs.checkpoints, min(benchmark_size, max(1, n_kmers)))
     t_start = now()
-    @showprogress "Benchmarking V4.0 query speed for $(length(k_mers)) k-mers..." for k in k_mers
+    @showprogress "Benchmarking query speed for $(length(k_mers)) k-mers..." for k in k_mers
         findfirst(kct, k)
     end
     query_time_ms = Dates.value(now() - t_start)
 
     printstyled(
-        "V4.0: $n_kmers k-mers, $n_samples samples, ~$est_pairs pairs, $n_blocks blocks, " *
+        "$n_kmers k-mers, $n_samples samples, ~$est_pairs pairs, $n_blocks blocks, " *
         "$(round(bytes_per_kmer; digits=2)) B/k-mer\n  kmer_seqs=$(Base.format_bytes(kmer_seq_bytes))  " *
         "block_ptr=$(Base.format_bytes(block_ptr_bytes))  blob=$(Base.format_bytes(blob_bytes))  " *
         "total=$(Base.format_bytes(total_bytes))\n", color=:green)

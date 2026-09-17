@@ -1,14 +1,8 @@
 using Kmers, Kmers.BioSequences
 import BioSequences.bits_per_symbol
 
-# A 5-bit amino-acid alphabet for BioSequences / Kmers. Amino acids encode straight to
-# their AminoAcid byte value (0..21, everything up to AA_Gap), so a K-mer of amino acids
-# packs into K*5 bits. The methods below are the BioSequences interface hooks
-# (BitsPerSymbol, encode, decode) plus the bit-addressing helpers Kmers needs to pull a
-# single symbol out of a multi-word k-mer whose symbols do not align to 64-bit boundaries:
-# offset gives the unused high-bit padding, true_index maps a logical symbol index to its
-# absolute bit position, chunk finds which .data word a symbol lands in, and
-# extract_encoded_element handles the case where a symbol straddles two words.
+# 5-bit amino-acid alphabet for BioSequences/Kmers (AminoAcid byte value packs straight into
+# K*5 bits). See ARCHITECTURE.md for the multi-word bit-addressing scheme below.
 
 struct AAAlphabet <: Alphabet end
 
