@@ -335,6 +335,43 @@ _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
       @test _count(reads, K; translate = false) == ref
     end
 
+    @testset "double_strand=false (default) is unchanged" begin
+      mq = Channel{Dict{UInt64, UInt32}}(1)
+      count_kmers(reads, K, mq; translate = false)
+      @test take!(mq) == _count(reads, K; translate = false)
+    end
+
+    @testset "double_strand=true counts each read's reverse complement too" begin
+      _count_ds(chunk, K; translate) = begin
+        mq = Channel{Dict{UInt64, UInt32}}(1)
+        count_kmers(chunk, K, mq; translate = translate, double_strand = true)
+        take!(mq)
+      end
+      _revcomp_ref(l) = string(BioSequences.reverse_complement(LongDNA{4}(l)))
+
+      @testset "translate=false" begin
+        forward = _count(reads, K; translate = false)
+        revcomp = _count(map(_revcomp_ref, filter(_ok, reads)), K; translate = false)
+        @test _count_ds(reads, K; translate = false) == merge(+, forward, revcomp)
+      end
+
+      @testset "translate=true" begin
+        forward = _count(reads, K; translate = true)
+        revcomp = _count(map(_revcomp_ref, filter(_ok, reads)), K; translate = true)
+        @test _count_ds(reads, K; translate = true) == merge(+, forward, revcomp)
+      end
+
+      @testset "a palindromic-adjacent read still counts both strands independently" begin
+        # ACGT's own reverse complement is ACGT, so a read built entirely from it is its own
+        # reverse complement -- double_strand should still double its counts, not collapse
+        # them, since count_strand! is called twice regardless of what the two strands equal.
+        pal = ["ACGTACGTACGT"]
+        K2 = 4
+        once = _count(pal, K2; translate = false)
+        @test _count_ds(pal, K2; translate = false) == Dict(k => 2v for (k, v) in once)
+      end
+    end
+
     @testset "DNA streaming build -> KCT{K, DNAAlphabet{2}} V4.0" begin
       A = UInt64(0x000010); B = UInt64(0x200001); C = UInt64(0x400005)
       Dk = UInt64(0x600002); E = UInt64(0x400777)
@@ -372,6 +409,159 @@ _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
       for x in allk
         @test kct2.counts[findfirst(kct2.kmer, x)] == cv(x)
       end
+    end
+  end
+
+  @testset "12. Peptide queries" begin
+    # K=18nt -> 6aa keeps DEFAULT_IDX_PREFIX_SIZE (5) meaningfully smaller than K, so the
+    # prefix index partitions on exactly the first residue (32 buckets, bucket = top 5 bits
+    # = 1 symbol) instead of collapsing to a single bucket the way the K=4aa tables above do.
+    # Real bucket boundaries, not just correct arithmetic, is the point of this testset.
+    kk = 6
+
+    # M-bucket: 4 k-mers sharing first residue M, sorted "MA.." before "MC..".
+    K1 = "MAAAAA"; K2 = "MAACCC"; K3 = "MCCCCC"; K4 = "MCCCCG"
+    # K-bucket: 2 k-mers, a different first residue, isolation check against the M-bucket.
+    K5 = "KAAAAA"; K6 = "KCCCCC"
+    # Second tile for an L > K peptide ("MAAAAA" + "AAAAAG" overlap by 5 residues).
+    K7 = "AAAAAG"
+    # I/L pair at the same position, same counts pattern as K1/K2 in shape but distinct rows.
+    K8 = "MLAAAA"; K9 = "MIAAAA"
+
+    peps = [K1, K2, K3, K4, K5, K6, K7, K8, K9]
+    counts = Dict(
+      K1 => (3, 0, 5), K2 => (2, 4, 0), K3 => (1, 1, 1), K4 => (0, 2, 3),
+      K5 => (7, 0, 0), K6 => (0, 6, 0), K7 => (4, 4, 4), K8 => (2, 3, 1), K9 => (5, 0, 2),
+    )
+    codes = Dict(p => _aa_code(p) for p in peps)
+    S = [Dict{UInt64, UInt32}(codes[p] => counts[p][s] for p in peps if counts[p][s] != 0) for s in 1:3]
+    paths = ["s1", "s2", "s3"]
+    cmap = Dict(paths[i] => S[i] for i in eachindex(S))
+
+    kct = mktempdir() do tmp; mktempdir() do out
+      p = build_kct_streaming(paths; K = 3kk, translate = true, wave_size = 3, shard_bits = 2,
+                              tmp_dir = tmp, out_dir = out, counter = (x -> deepcopy(cmap[x])))
+      load_kct(p)
+    end; end
+    @test idx_prefix_size(kct.kmer) == 5
+
+    @testset "_aa_code matches translate() encoding" begin
+      dna = LongSequence{DNAAlphabet{2}}("ATGGCGGCGGCGGCAGCC")  # 18nt, 6 codons M-A-A-A-A-A, no stop
+      km = Kmer{DNAAlphabet{2}, 18}(dna)
+      aa_km = translate(km)
+      @test aa_km !== nothing
+      pep_str = String([Char(aa_km[i]) for i in 1:kk])
+      @test _aa_code(pep_str) == aa_km.data[1]
+    end
+
+    @testset "L < K: prefix range sums, real bucket boundaries" begin
+      # "M" spans the whole M-bucket: first_hit lands at the bucket's own r.start.
+      # (K1+K2+K3+K4+K8+K9 -- the I/L pair also starts with M, same bucket as K1-K4.)
+      @test peptide_counts(kct, "M") == UInt32[13, 10, 12]
+      # "MA" is the bucket's leading sub-run (K1, K2).
+      @test peptide_counts(kct, "MA") == UInt32[5, 4, 5]
+      # "MC" is the bucket's trailing sub-run (K3, K4), ending exactly at r.stop.
+      @test peptide_counts(kct, "MC") == UInt32[1, 3, 4]
+      # "K" is a different bucket entirely: isolation from the M-bucket's contents.
+      @test peptide_counts(kct, "K") == UInt32[7, 6, 0]
+    end
+
+    @testset "L == K: exact match" begin
+      @test peptide_counts(kct, K1) == UInt32[3, 0, 5]
+    end
+
+    @testset "L > K: tile minimum" begin
+      # "MAAAAAG" tiles as K1="MAAAAA" + K7="AAAAAG"; bounds the count from above.
+      @test peptide_counts(kct, "MAAAAAG") == min.(UInt32[3, 0, 5], UInt32[4, 4, 4])
+    end
+
+    @testset "C-terminal blind spot: absent prefix returns zero, not an error" begin
+      # No k-mer in this table starts with residue "G"; documents the blind spot rather
+      # than fixing it (PAPER_TODO.md task A5).
+      @test peptide_counts(kct, "G") == UInt32[0, 0, 0]
+    end
+
+    @testset "il_ambiguous sums every I/L variant" begin
+      @test peptide_counts(kct, "MLAAAA") == UInt32[2, 3, 1]
+      @test peptide_counts(kct, "MIAAAA") == UInt32[5, 0, 2]
+      @test peptide_counts(kct, "MLAAAA"; il_ambiguous = true) == UInt32[7, 3, 3]
+      @test peptide_counts(kct, "MIAAAA"; il_ambiguous = true) == UInt32[7, 3, 3]
+    end
+
+    @testset "peptide_matrix matches per-peptide peptide_counts" begin
+      qpeps = [K1, "M", "MA", "MAAAAAG", "G"]
+      M = peptide_matrix(kct, qpeps)
+      for (j, p) in enumerate(qpeps)
+        @test M[j, :] == peptide_counts(kct, p)
+      end
+    end
+
+    @testset "searchsorted range-spanning-buckets throws rather than misreading" begin
+      # idx_prefix_size(kct.kmer) == 5 for this table, so a 0-residue "prefix" (free = 30
+      # bits) cannot fit in one bucket: exercises the ArgumentError guard directly.
+      @test_throws ArgumentError searchsorted(kct.kmer, UInt64(0), typemax(UInt64) >> (64 - 30))
+    end
+  end
+
+  @testset "13. Joins (_merge_walk, add_biotypes, setdiff)" begin
+    @testset "_merge_walk: exact (i, j) pairs on known overlapping arrays" begin
+      a = DeltaArray(UInt64[1, 3, 5, 7, 9])
+      b = DeltaArray(UInt64[3, 5, 6, 9, 10])
+      pairs = Tuple{Int, Int}[]
+      _merge_walk((i, j) -> push!(pairs, (i, j)), a, b)
+      # value 3: a[2], b[1]. value 5: a[3], b[2]. value 9: a[5], b[4].
+      @test pairs == [(2, 1), (3, 2), (5, 4)]
+    end
+
+    @testset "add_biotypes: matched k-mers get the right mask, unmatched stay intergenic" begin
+      bnames = ["intergenic", "protein_coding", "lncRNA"]
+      gidx_kmers = UInt64[0x10, 0x20, 0x30, 0x40]
+      gidx_masks = UInt64[2, 4, 2, 4]  # 0x10,0x30 -> protein_coding; 0x20,0x40 -> lncRNA
+      gidx = KCT{4, AAAlphabet}(gidx_kmers, gidx_masks, bnames)
+
+      S = [Dict{UInt64, UInt32}(UInt64(0x10) => 3, UInt64(0x25) => 5),
+           Dict{UInt64, UInt32}(UInt64(0x30) => 7, UInt64(0x50) => 2)]
+      paths = ["s1", "s2"]
+      cmap = Dict(paths[i] => S[i] for i in eachindex(S))
+      kct = mktempdir() do tmp; mktempdir() do out
+        p = build_kct_streaming(paths; K = 12, translate = true, wave_size = 2, shard_bits = 1,
+                                tmp_dir = tmp, out_dir = out, counter = (x -> deepcopy(cmap[x])))
+        load_kct(p)
+      end; end
+      @test collect(kct.kmer.seqs) == sort(UInt64[0x10, 0x25, 0x30, 0x50])
+
+      rich = add_biotypes(kct, gidx)
+      @test has_biotype(rich.biotype, findfirst(rich.kmer, UInt64(0x10)), "protein_coding")
+      @test has_biotype(rich.biotype, findfirst(rich.kmer, UInt64(0x30)), "protein_coding")
+      @test has_biotype(rich.biotype, findfirst(rich.kmer, UInt64(0x25)), "intergenic")
+      @test has_biotype(rich.biotype, findfirst(rich.kmer, UInt64(0x50)), "intergenic")
+      # counts pass through untouched
+      @test rich.counts[findfirst(rich.kmer, UInt64(0x10))] == kct.counts[findfirst(kct.kmer, UInt64(0x10))]
+    end
+
+    @testset "setdiff: default predicate is plain set difference" begin
+      tS = [Dict{UInt64, UInt32}(UInt64(0x10) => 4, UInt64(0x20) => 1, UInt64(0x30) => 9)]
+      nS = [Dict{UInt64, UInt32}(UInt64(0x20) => 2, UInt64(0x40) => 6)]
+      tumor = mktempdir() do tmp; mktempdir() do out
+        p = build_kct_streaming(["t1"]; K = 12, translate = true, wave_size = 1, shard_bits = 1,
+                                tmp_dir = tmp, out_dir = out, counter = (_ -> deepcopy(tS[1])))
+        load_kct(p)
+      end; end
+      normal = mktempdir() do tmp; mktempdir() do out
+        p = build_kct_streaming(["n1"]; K = 12, translate = true, wave_size = 1, shard_bits = 1,
+                                tmp_dir = tmp, out_dir = out, counter = (_ -> deepcopy(nS[1])))
+        load_kct(p)
+      end; end
+
+      idx = setdiff(tumor, normal)
+      found = sort([tumor.kmer[i].data[1] for i in idx])
+      @test found == sort(UInt64[0x10, 0x30])  # 0x20 is in both, excluded
+
+      # count-aware predicate: keep tumor k-mers with tumor count >= 5 and (absent from
+      # normal, or all-zero there) -- 0x30 (tumor=9, absent) passes, 0x10 (tumor=4) does not.
+      idx2 = setdiff(tumor, normal; pred = (trow, nrow) -> trow[1] >= 5 && (isnothing(nrow) || all(iszero, nrow)))
+      found2 = sort([tumor.kmer[i].data[1] for i in idx2])
+      @test found2 == UInt64[0x30]
     end
   end
 

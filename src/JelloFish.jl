@@ -112,10 +112,33 @@ end
     return false
 end
 
+# ASCII byte -> its complement byte (A<->T, C<->G, case preserved), identity elsewhere.
+# Only ever applied after `_has_nonacgt` has already passed, so the "elsewhere" branch never
+# actually fires on real input -- kept total rather than partial so a caller can't crash on it.
+const _COMPLEMENT_BYTE = let t = collect(UInt8, 0x00:0xff)
+    for (a, b) in (('A', 'T'), ('T', 'A'), ('C', 'G'), ('G', 'C'),
+                   ('a', 't'), ('t', 'a'), ('c', 'g'), ('g', 'c'))
+        t[UInt8(a) + 1] = UInt8(b)
+    end
+    t
+end
+
+# Reverse complement of a raw ASCII read, byte-level (double_strand counting needs the
+# antisense read before translation, not a k-mer-level complement -- see PAPER_TODO.md's C6
+# for why the two aren't interchangeable once `translate=true` is in play).
+@inline function _revcomp(l::String)
+    n = ncodeunits(l)
+    buf = Vector{UInt8}(undef, n)
+    @inbounds for p in 1:n
+        buf[n - p + 1] = _COMPLEMENT_BYTE[codeunit(l, p) + 1]
+    end
+    return String(buf)
+end
+
 # Streams a bio file in fixed-size chunks, one spawned counting task per chunk, gated by a
 # semaphore so the reader can't outrun the counters (see ARCHITECTURE.md). Blocks until done.
 function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}},
-                      chunking::Int=1_000_000; translate::Bool=false,
+                      chunking::Int=1_000_000; translate::Bool=false, double_strand::Bool=false,
                       max_inflight::Int=max(2, Threads.nthreads()), verbose::Bool=false)
     counting_tasks = Task[]
     gate = Base.Semaphore(max_inflight)
@@ -130,7 +153,7 @@ function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UI
         Threads.atomic_add!(inflight, 1)
         push!(counting_tasks, Threads.@spawn begin
             try
-                count_kmers(chunk, K, merge_queue; translate = translate)
+                count_kmers(chunk, K, merge_queue; translate = translate, double_strand = double_strand)
             finally
                 Threads.atomic_sub!(inflight, 1)
                 Base.release(gate)
@@ -163,33 +186,46 @@ end
 
 # Count one chunk of reads and drop the hash-table onto merge_queue. `translate=false`
 # counts raw nucleotide K-mers, `translate=true` counts their in-frame AA (K/3)-mers.
-# Reads with any non-ACGT base are skipped whole. Errors are logged and the partial table
-# is still enqueued.
+# `double_strand=true` also counts each read's reverse complement -- the only point this can
+# be done cheaply: once `translate=true` has folded a window down to an AA code, there is no
+# way back to "the" antisense peptide (codon degeneracy makes translation many-to-one), so
+# the antisense pass has to happen here, on the raw read, before translation, not as a
+# lookup-time trick on the finished table (see PAPER_TODO.md's C6 row for the discordance
+# case this was designed to fix, and why a query-time fix doesn't work for AA-mode tables).
+# Reads with any non-ACGT base are skipped whole (both strands, so no revcomp is attempted on
+# something `_has_nonacgt` already rejected). Errors are logged and the partial table is
+# still enqueued.
 function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}};
-                     translate::Bool=false, verbose::Bool=false)
+                     translate::Bool=false, double_strand::Bool=false, verbose::Bool=false)
     hash = Dict{UInt64, UInt32}()
     twoK = 2K
     twoK <= 64 || error("K=$K too large for a 64-bit nucleotide code")
     translate && (5 * (K ÷ 3) <= 64 || error("K=$K too large for a 64-bit AA code"))
     kmer_mask = twoK == 64 ? typemax(UInt64) : (UInt64(1) << twoK) - UInt64(1)
     kk = translate ? K ÷ 3 : K
+
+    count_strand! = function (l::String)
+        code = UInt64(0)
+        valid = 0
+        @inbounds for p in 1:ncodeunits(l)
+            code = ((code << 2) | _NT2BIT[codeunit(l, p) + 1]) & kmer_mask
+            valid += 1
+            valid < K && continue
+            if translate
+                key = _fold_codons(code, twoK, kk)
+                key == _STOP_KEY && continue
+            else
+                key = code
+            end
+            hash[key] = get(hash, key, UInt32(0)) + UInt32(1)
+        end
+    end
+
     try
         @inbounds for l in chunk
             (ncodeunits(l) < K || _has_nonacgt(l)) && continue
-            code = UInt64(0)
-            valid = 0
-            for p in 1:ncodeunits(l)
-                code = ((code << 2) | _NT2BIT[codeunit(l, p) + 1]) & kmer_mask
-                valid += 1
-                valid < K && continue
-                if translate
-                    key = _fold_codons(code, twoK, kk)
-                    key == _STOP_KEY && continue
-                else
-                    key = code
-                end
-                hash[key] = get(hash, key, UInt32(0)) + UInt32(1)
-            end
+            count_strand!(l)
+            double_strand && count_strand!(_revcomp(l))
         end
     catch e
         @error "counting thread task crashed during hash building" exception=(e, catch_backtrace())
@@ -203,24 +239,31 @@ end
 
 """
     jello_superthreaded_hash(fastq, K, chunking=1_000_000, queue_size=128;
-                             translate=false, max_inflight=nthreads(), verbose=false)
+                             translate=false, double_strand=false, max_inflight=nthreads(),
+                             verbose=false)
         -> Dict{UInt64, UInt32}
 
 Count k-mers in `fastq` and return a map from a k-mer's raw bit-encoding to its count.
 `K` is always the nucleotide k-mer length. With `translate=false` (default) the keys are
 raw `K`-nt codes (`Kmer{DNAAlphabet{2}, K, 1}.data[1]`); with `translate=true` they are the
 in-frame amino-acid `K÷3`-mer codes (`Kmer{AAAlphabet, K÷3, 1}.data[1]`), stop codons
-dropped. Reads are counted per chunk on separate threads while a pairer task folds the
-finished per-chunk tables together in a binary tree. `chunking` sets reads per chunk,
-`queue_size` the merge-queue depth, `max_inflight` the cap on concurrent counting tasks so
-the reader cannot outrun the counters.
+dropped. `double_strand=true` additionally counts each read's reverse complement, for
+libraries where the sequenced strand of a fragment isn't the transcript's coding strand
+(unstranded: roughly half of coverage; reverse-stranded protocols: almost all of it) --
+without this, `translate=true` counting only ever sees whichever strand happened to be
+sequenced as-is, since translating a read is not something a query can undo afterwards
+(unlike raw nucleotide k-mers, an amino-acid k-mer has no cheap "complement" to look up
+alongside it once counted). Reads are counted per chunk on separate threads while a pairer
+task folds the finished per-chunk tables together in a binary tree. `chunking` sets reads
+per chunk, `queue_size` the merge-queue depth, `max_inflight` the cap on concurrent counting
+tasks so the reader cannot outrun the counters.
 """
 function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000, queue_size::Int=128;
-                                  translate::Bool=false, max_inflight::Int=max(2, Threads.nthreads()),
+                                  translate::Bool=false, double_strand::Bool=false,
+                                  max_inflight::Int=max(2, Threads.nthreads()),
                                   verbose::Bool=false)
     Hash_Type = Dict{UInt64, UInt32}
     merge_queue = Channel{Hash_Type}(queue_size)
-    merge_tasks = Task[]
     paired = Hash_Type[]
     signal = Channel{Nothing}(Inf)
     inflight = Threads.Atomic{Int64}(0)
@@ -230,27 +273,34 @@ function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000
             push!(paired, child_hash)
             if length(paired) >= 2
                 left, right = pop!(paired), pop!(paired)
-                task = @spawn begin
+                # `task` is intentionally not retained: keeping every spawned Task alive in a
+                # growing vector (the previous design) is what held `left`/`right` reachable
+                # long after their merge finished, since a Task's closure isn't freed just
+                # because it completed -- only because nothing still references the Task
+                # itself. That leak scaled with how many merges a single deep sample needed
+                # and was the real cause of the C8 ovarian tumor build's repeated OOMs
+                # (1TB still wasn't enough), not undersized memory requests. `inflight`
+                # already tracks live merge tasks for the progress display below.
+                @spawn begin
                     Threads.atomic_add!(inflight, 1)
                     put!(merge_queue, merge(+, left, right))
                     Threads.atomic_sub!(inflight, 1)
                     put!(signal, nothing)
                 end
-                push!(merge_tasks, task)
             end
         end
     catch e
         @error "Pairer task crashed" exception=(e, catch_backtrace())
     end
 
-    chunk_stream(fastq, K, merge_queue, chunking; translate = translate,
+    chunk_stream(fastq, K, merge_queue, chunking; translate = translate, double_strand = double_strand,
                  max_inflight = max_inflight, verbose = verbose)
 
     progress = ProgressUnknown(desc = "Counting tasks done. Waiting on merger tasks to complete...")
     while inflight[] != 0 || merge_queue.n_avail_items != 0 || length(paired) != 1
         take!(signal)
         !verbose && next!(progress; showvalues=[
-            ("active merging tasks", length(filter(x->x.state!=:done, merge_tasks))),
+            ("active merging tasks", inflight[]),
             ("items in merge queue", merge_queue.n_avail_items),
         ])
     end

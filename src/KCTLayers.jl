@@ -8,6 +8,11 @@ using Dates
 using BitIntegers
 using Mmap
 
+# _Prog/tick!/_log: needed as early as this (its type is used in keyword argument
+# annotations further down, resolved at definition time, not call time), not just by
+# StreamBuild.jl and PeptideQuery.jl at the bottom of this file.
+include("Progress.jl")
+
 abstract type AbstractLayer end
 
 ## K-mer Layer ##
@@ -64,9 +69,23 @@ end
 # length (see ARCHITECTURE.md). 5 keeps the AA index sub-GB with a negligible scan cost.
 const DEFAULT_IDX_PREFIX_SIZE = 5
 
+# The AA default (5) only stays sub-GB because AA k-mers are short (K~10). DNA k-mers run
+# much longer (K~31), so the same prefix_size there would demand 1<<((K-5)*2) buckets --
+# astronomically large. `build_kct_streaming` derives K-12 for DNA to keep the same sub-GB
+# budget; every OTHER place that sizes or recomputes a KmerLayer's index (fresh construction,
+# and critically every `load_kct` of a DNA table) must derive the identical value, or the
+# bucket array allocated at load time silently uses the AA default and OOMs outright -- this
+# bit both `_empty_kmer_idx` and `compute_index!`'s own default, since a table built with one
+# prefix_size and reloaded assuming another trips `compute_index!`'s own bucket-count assert.
+# The AAAlphabet-specific method lives after `include("JelloFish.jl")` below, since that's
+# where AAAlphabet itself is defined -- this generic + the DNA method are enough for both
+# `_empty_kmer_idx` and `compute_index!` to type-check now; dispatch only needs the AA method
+# to actually exist by the time either is *called* on an AA table, not at this point in the file.
+_default_idx_prefix_size(K::Integer, ::DNAAlphabet{2}) = max(0, K - 12)
+
 # Empty prefix index sized for a K-mer table over alphabet Ab, with checkpoint word type C.
 _empty_kmer_idx(K::Integer, ab::Alphabet, ::Type{C};
-                prefix_size::Integer=DEFAULT_IDX_PREFIX_SIZE) where {C<:Unsigned} =
+                prefix_size::Integer=_default_idx_prefix_size(K, ab)) where {C<:Unsigned} =
     Ref(Int64(prefix_size)) => fill((zero(C), 0:-1),
                                     1 << max(0, (K - prefix_size) * bits_per_symbol(ab)))
 
@@ -97,7 +116,7 @@ after any operation that changes the k-mer set. The layer's index vector must
 already be sized for `prefix_size` (see `_empty_kmer_idx`).
 """
 function compute_index!(kl::KmerLayer{K, Ab, C};
-                        prefix_size::Int64=DEFAULT_IDX_PREFIX_SIZE) where {K, Ab<:Alphabet, C<:Unsigned}
+                        prefix_size::Int64=_default_idx_prefix_size(K, Ab())) where {K, Ab<:Alphabet, C<:Unsigned}
     n = length(kl.seqs)
     want = 1 << max(0, (K - prefix_size) * bits_per_symbol(Ab()))
     @assert length(kl.idx[2]) == want "prefix index sized for a different prefix_size " *
@@ -577,14 +596,48 @@ function KCT{K, Ab}(sorted_kmers::Vector{UInt64}, bitmasks::Vector{UInt64},
     return kct
 end
 
+## Joins ##
+
+# Manuscript Section 2.8 treats tumor-specificity screening as joins between sorted k-mer
+# tables. _merge_walk is the primitive behind all of them: one O(n + m) sorted-merge pass,
+# callback on exact matches only. add_biotypes below is an inner join built on it; setdiff
+# is the discovery anti-join, which needs to see misses too so it gets its own walk rather
+# than reusing this one as-is.
+
+"""
+    _merge_walk(f, a::DeltaArray{C}, b::DeltaArray{C}; prog=nothing) where {C}
+
+Call `f(i, j)` for every pair of 1-based positions with `a[i] == b[j]`, in ascending
+order. O(n + m): advances whichever side holds the smaller value at each step, exactly
+once through each array. `prog`, an `_Prog` (Progress.jl), gets a `tick!` every 10M steps
+if given, since a full pass over the GTEx k-mer layer is exactly the kind of loop
+PAPER_TODO.md's conventions want instrumented.
+"""
+function _merge_walk(f, a::DeltaArray{C}, b::DeltaArray{C}; prog::Union{_Prog, Nothing}=nothing) where {C}
+    ia = iterate(a); ib = iterate(b)
+    i = 1; j = 1; steps = 0
+    while !isnothing(ia) && !isnothing(ib)
+        (va, sa), (vb, sb) = ia, ib
+        if va == vb
+            f(i, j)
+            ia = iterate(a, sa); ib = iterate(b, sb); i += 1; j += 1
+        elseif va < vb
+            ia = iterate(a, sa); i += 1
+        else
+            ib = iterate(b, sb); j += 1
+        end
+        steps += 1
+        !isnothing(prog) && steps % 10_000_000 == 0 && tick!(prog, 10_000_000)
+    end
+end
+
 """
     add_biotypes(kct, gidx) -> KCT
 
 Left-join the k-mers of `kct` against a genomic index `gidx`
 (`KCT{K, Ab, Nothing, BiotypLayer}`, from `build_genomic_index`) and return a new
-`KCT` carrying a `BiotypLayer`. The join is an O(n + m) walk over the two sorted
-k-mer stores. A k-mer that matches an entry in `gidx` takes that entry's biotype
-mask. A k-mer with no match keeps the intergenic mask.
+`KCT` carrying a `BiotypLayer`. A k-mer that matches an entry in `gidx` takes that
+entry's biotype mask. A k-mer with no match keeps the intergenic mask.
 
 The body only walks `kct.kmer.seqs` and forwards `kct.counts` untouched, so it
 works whether or not `kct` carries a `CountsLayer`.
@@ -596,27 +649,9 @@ function add_biotypes(kct::KCT{K, Ab, Counts, Nothing, C, D},
     index_map = Dict{UInt64, UInt16}(INTERGENIC_MASK => UInt16(1))
     ids = fill(UInt16(1), n)
 
-    kct_iter = iterate(kct.kmer.seqs)
-    gidx_iter = iterate(gidx.kmer.seqs)
-    i = 1; j = 1
-
-    # O(n + m) sorted merge walk: advance the smaller pointer each step,
-    # assign a biotype mask only on exact k-mer match.
-    while !isnothing(kct_iter) && !isnothing(gidx_iter)
-        kct_val, kct_state = kct_iter
-        gidx_val, gidx_state = gidx_iter
-        if kct_val == gidx_val
-            ids[i] = _intern_mask!(pool, index_map, biotype_mask(gidx.biotype, j))
-            kct_iter = iterate(kct.kmer.seqs, kct_state)
-            gidx_iter = iterate(gidx.kmer.seqs, gidx_state)
-            i += 1; j += 1
-        elseif kct_val < gidx_val
-            kct_iter = iterate(kct.kmer.seqs, kct_state)
-            i += 1
-        else
-            gidx_iter = iterate(gidx.kmer.seqs, gidx_state)
-            j += 1
-        end
+    prog = _Prog(n + length(gidx.kmer), "add_biotypes")
+    _merge_walk(kct.kmer.seqs, gidx.kmer.seqs; prog=prog) do i, j
+        ids[i] = _intern_mask!(pool, index_map, biotype_mask(gidx.biotype, j))
     end
 
     n_intergenic = count(==(UInt16(1)), ids)
@@ -625,7 +660,58 @@ function add_biotypes(kct::KCT{K, Ab, Counts, Nothing, C, D},
     return KCT(kct.kmer, kct.counts, BiotypLayer(ids, pool, gidx.biotype.biotype_names))
 end
 
+"""
+    setdiff(tumor::KCT{K,Ab,CountsLayer}, normal::KCT{K,Ab,CountsLayer}; pred) -> Vector{Int}
+
+The discovery anti-join (manuscript Section 2.8C): tumor k-mer indices satisfying `pred`
+against their counterpart row in `normal`. `pred(tumor_row, normal_row)` sees the tumor
+k-mer's own count vector and the matching row from `normal`, or `nothing` if that k-mer
+never appears in `normal` at all. The default predicate (`isnothing(nrow)`) is plain set
+difference on the k-mer sets. A count-aware `pred`, for example requiring a minimum tumor
+count together with a maximum per-tissue normalized count in `nrow`, generalizes this to
+the k-mer arithmetic Laumont et al. (2018) used for candidate discovery, now with exact
+counts on both sides instead of a presence/absence subtraction.
+
+O(n + m), one sorted-merge pass over both k-mer layers, no dictionary. k-mers unique to
+`normal` are skipped without calling `pred` (only tumor k-mers can appear in the result).
+"""
+function Base.setdiff(tumor::KCT{K, Ab, CountsLayer}, normal::KCT{K, Ab, CountsLayer};
+                      pred=(trow, nrow) -> isnothing(nrow)) where {K, Ab}
+    out = Int[]
+    ta = tumor.kmer.seqs; na = normal.kmer.seqs
+    it = iterate(ta); in_ = iterate(na)
+    i = 1; j = 1; steps = 0
+    prog = _Prog(length(ta) + length(na), "setdiff")
+    while !isnothing(it)
+        if isnothing(in_)
+            # normal is exhausted: every remaining tumor k-mer has no counterpart.
+            pred(tumor.counts[i], nothing) && push!(out, i)
+            it = iterate(ta, it[2]); i += 1
+        else
+            tv, tst = it
+            nv, nst = in_
+            if tv == nv
+                pred(tumor.counts[i], normal.counts[j]) && push!(out, i)
+                it = iterate(ta, tst); in_ = iterate(na, nst); i += 1; j += 1
+            elseif tv < nv
+                pred(tumor.counts[i], nothing) && push!(out, i)
+                it = iterate(ta, tst); i += 1
+            else
+                in_ = iterate(na, nst); j += 1
+            end
+        end
+        steps += 1
+        steps % 10_000_000 == 0 && tick!(prog, 10_000_000)
+    end
+    return out
+end
+
 include("JelloFish.jl")
+
+# AA default: the original constant, unconditionally. Lives here, not next to the DNA
+# method above, because AAAlphabet is only defined once JelloFish.jl has been included.
+_default_idx_prefix_size(K::Integer, ::AAAlphabet) = DEFAULT_IDX_PREFIX_SIZE
+
 include("JellyfishDump.jl")
 include("GenomicIndexBuilder.jl")
 include("KCTBenchmarker.jl")
@@ -634,3 +720,10 @@ include("KCTLoader.jl")
 # From-scratch streaming builder: k-way merge of per-sample sorted k-mer streams into a
 # CountsLayer table. Needs load_kct / write_kct from KCTLoader.jl above.
 include("StreamBuild.jl")
+
+# Peptide-level queries (prefix ranges for 8/9-mers, exact/tiled lookups for longer
+# peptides): needs CountsLayer's _decode_block from above and _Prog from Progress.jl.
+include("PeptideQuery.jl")
+
+# Per-sample library sizes for rphm normalization (manuscript Section 2.7).
+include("SampleMeta.jl")

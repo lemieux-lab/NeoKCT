@@ -7,13 +7,7 @@
 const _STREAM_BITS_PER_AA = 5   # bits_per_symbol(AAAlphabet())
 const _STREAM_BITS_PER_NT = 2   # bits_per_symbol(DNAAlphabet{2}())
 
-# println + flush: stdout is block-buffered when redirected to a file, so without the flush
-# a multi-hour wave shows nothing in the log until the buffer fills or the process exits.
-# Locked so the shard-parallel merge/assembly loops don't interleave half-lines.
-const _LOG_LOCK = ReentrantLock()
-_log(args...) = lock(_LOG_LOCK) do
-    println("[", Dates.format(now(), "HH:MM:SS"), "] ", args...); flush(stdout)
-end
+# _log is defined in Progress.jl (included earlier), shared with _Prog/tick!.
 
 # One (k-mer, sample, count) observation, written raw to the wave shard record files.
 struct _StreamRec
@@ -471,6 +465,12 @@ waves instead of growing with the cohort.
 - `K`: nucleotide k-mer length. `chunks` is the read-chunk size passed to the counter
 - `translate`: `false` (default) builds a DNA table, `KCT{K, DNAAlphabet{2}}`. `true` builds
   a translated table, `KCT{K÷3, AAAlphabet}`. The default `counter` picks up this flag
+- `double_strand`: `false` (default, matches every table built before this option existed).
+  `true` also counts each read's reverse complement, so a library where the sequenced strand
+  isn't consistently the transcript's coding strand doesn't lose that coverage -- see
+  `jello_superthreaded_hash`'s docstring for why this has to happen during counting rather
+  than as a query-time trick once `translate=true` has folded reads down to AA k-mers. The
+  default `counter` picks up this flag; a custom `counter` must honour it itself
 - `wave_size`: samples counted and folded per wave
 - `shard_bits`: gives `2^shard_bits` prefix shards. `merge_fanin` partials are combined per
   hierarchical merge step
@@ -485,22 +485,23 @@ waves instead of growing with the cohort.
   projection after the first super-partial but never aborts)
 """
 function build_kct_streaming(sample_paths::Vector{String};
-        K::Int = 30, chunks::Int = 500_000, translate::Bool = false,
+        K::Int = 30, chunks::Int = 500_000, translate::Bool = false, double_strand::Bool = false,
         wave_size::Int = 100, shard_bits::Int = 8,
         merge_fanin::Int = 5, max_pool_gb::Real = 400, idx_prefix::Int = -1,
         count_attempts::Int = 4,
         tmp_dir::String = _STREAM_TMP_DEFAULT, out_dir::String,
         out_path::String = joinpath(out_dir, "neokct_v4.kct"),
-        counter = (p -> jello_superthreaded_hash(p, K, chunks; translate = translate)),
+        counter = (p -> jello_superthreaded_hash(p, K, chunks; translate = translate, double_strand = double_strand)),
         seeds::Vector{Tuple{String, Int}} = Tuple{String, Int}[],
         resume::Bool = true)
 
     Ab = translate ? AAAlphabet : DNAAlphabet{2}
     bps = translate ? _STREAM_BITS_PER_AA : _STREAM_BITS_PER_NT
     kk = translate ? K ÷ 3 : K
-    # `idx_prefix` < 0 means derive it: AA keeps the tuned prefix of 5 (1<<25 buckets), DNA
-    # uses kk-12 so the bucket table stays sub-GB (k=30 -> prefix 18 -> 1<<24, ~400 MB).
-    idx_prefix < 0 && (idx_prefix = translate ? DEFAULT_IDX_PREFIX_SIZE : max(0, kk - 12))
+    # `idx_prefix` < 0 means derive it via the same alphabet-dispatched default `load_kct`
+    # uses when reloading this table -- they must agree, or a fresh load silently allocates
+    # the wrong bucket count (see `_default_idx_prefix_size` in KCTLayers.jl).
+    idx_prefix < 0 && (idx_prefix = _default_idx_prefix_size(kk, Ab()))
     P = 1 << shard_bits
     keep_shift = bps * kk - shard_bits
     keep_shift >= 1 || error("shard_bits=$shard_bits too large for a $(kk)-symbol k-mer")

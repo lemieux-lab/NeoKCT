@@ -24,15 +24,23 @@ function write_kct(kct::KCT, path::String)
 end
 
 """
-    load_kct(path) -> KCT
+    load_kct(path; in_memory=false) -> KCT
 
 Read a `.kct` file written by `write_kct`, dispatching on its version tag. The
 prefix search index is rebuilt on load.
+
+`in_memory=true` reads the counts blob into a plain `Vector{UInt8}` with one
+sequential read instead of `mmap`-ing it. On a network filesystem, random
+per-query page faults into an `mmap`'d blob each pay the full round-trip
+latency (NFS `rsize` reads far more than one query's worth of bytes per
+fault); one big sequential read pays that cost once, up front, at close to
+line rate, and every query after that is a plain in-RAM lookup. Only sensible
+when the blob comfortably fits in RAM (see `_rss_gb` before choosing this).
 """
-function load_kct(path::String)
+function load_kct(path::String; in_memory::Bool=false)
     open(path, "r") do io
         version = read(io, Float64)
-        return _load_kct(io, Val(version))
+        return _load_kct(io, Val(version); in_memory)
     end
 end
 
@@ -134,27 +142,31 @@ function _read_header_and_kmers(io::IO)
     return layers_mask, n_kmers, kl
 end
 
-function _load_kct(io::IO, ::Val{4.0})
+function _load_kct(io::IO, ::Val{4.0}; in_memory::Bool=false)
     layers_mask, n_kmers, kl = _read_header_and_kmers(io)
-    cl = (layers_mask & UInt8(1)) != 0 ? _read_counts(io, n_kmers) : nothing
+    cl = (layers_mask & UInt8(1)) != 0 ? _read_counts(io, n_kmers; in_memory) : nothing
     bl = (layers_mask & UInt8(2)) != 0 ? _read_biotype(io, n_kmers) : nothing
     kct = _build_kct(kl, cl, bl)
     compute_index!(kct)
     return kct
 end
 
-function _read_counts(io::IO, n_kmers::Int64)
+function _read_counts(io::IO, n_kmers::Int64; in_memory::Bool=false)
     n_samples = read(io, Int64)
     nk = read(io, Int64)                       # == n_kmers (header), kept for self-consistency
     block_size = read(io, Int32)
     n_blocks = read(io, Int64)
     blob_len = read(io, Int64)
     block_ptr = Vector{UInt64}(undef, n_blocks); read!(io, block_ptr)
-    # mmap the blob rather than reading it in: at full cohort it is ~1-2 TB, and a query
-    # touches one block. The mapping outlives `io` being closed. Falls back to a plain read
-    # if mmap is unavailable (e.g. a filesystem that refuses it).
+    # Default: mmap the blob rather than reading it in, since at full cohort it is ~1-2 TB
+    # and a query touches one block. The mapping outlives `io` being closed. Falls back to a
+    # plain read if mmap is unavailable (e.g. a filesystem that refuses it). `in_memory=true`
+    # skips straight to the plain read -- see `load_kct`'s docstring for why that's the
+    # better choice on a network filesystem when the blob fits in RAM.
     blob = if blob_len == 0
         UInt8[]
+    elseif in_memory
+        b = Vector{UInt8}(undef, blob_len); read!(io, b); b
     else
         try
             b = Mmap.mmap(io, Vector{UInt8}, Int(blob_len))
