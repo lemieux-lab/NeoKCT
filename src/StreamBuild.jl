@@ -2,8 +2,9 @@
 #
 # External merge sort for cohorts too large for push!/collapse! (see ARCHITECTURE.md for the
 # full pipeline: wave count -> shard scatter -> fold -> interleaved hierarchical merge ->
-# streaming assembly). Alphabet-generic below the counter; only the shard shift and the
-# final KmerLayer need `translate` (DNA -> KCT{K,DNAAlphabet{2}}, AA -> KCT{K÷3,AAAlphabet}).
+# adaptive reshard -> streaming assembly). Alphabet-generic below the counter; only the
+# shard shift and the final KmerLayer need `translate` (DNA -> KCT{K,DNAAlphabet{2}}, AA ->
+# KCT{K÷3,AAAlphabet}).
 const _STREAM_BITS_PER_AA = 5   # bits_per_symbol(AAAlphabet())
 const _STREAM_BITS_PER_NT = 2   # bits_per_symbol(DNAAlphabet{2}())
 
@@ -251,17 +252,153 @@ function _merge_plan(names::Vector{String}, fanin::Int)
     return plan, cur
 end
 
+## Adaptive prefix-tree reshard (fixes assembly's OOM on skewed shard sizes) ##
+
+# Splits one on-disk partial shard into 2^extra_bits children by the next `extra_bits` bits
+# below `remaining_bits` (bits not yet consumed by shard_bits or any prior split level).
+# Reads the whole file once (same O(filesize) footprint as `_build_wave_shard`); callers may
+# run this concurrently across the handful of ROOTS holding the same prefix (peak memory
+# then bounded by root-count x one file's size, a few hundred GB at worst) but must never run
+# it concurrently for two DIFFERENT prefixes -- the combined-across-roots size that triggers
+# a split can be hundreds of GB, and stacking several different oversized shards at once is
+# exactly the concurrency spike `_assemble_v4`'s own window caused in production (see
+# `_resolve_leaf`, which parallelizes only across roots, never across prefixes). A k-mer's
+# child index is monotonic in its sort position (the parent's `kmers` are
+# already globally sorted and every k-mer in it shares identical already-consumed bits), so
+# a single linear scan finds each child's contiguous index range in order, and each child is
+# built and written before moving to the next, bounding peak extra memory to the parent plus
+# its single largest child rather than a multiple of the parent.
+#
+# Rows are copied flat, one row per k-mer, deliberately WITHOUT `_RowPool`/`_intern_row!`
+# cross-k-mer dedup -- same no-dedup tradeoff `_merge_shard_rows` already makes at assembly,
+# for the same measured reason (see ARCHITECTURE.md's CountsLayer section: rows longer than
+# 4 pairs dedup at ~1.0x in practice, essentially unique, so the dedup dictionary costs about
+# as many bytes as it saves). It also mattered in practice: an earlier Dict-based version of
+# this function took ~10.5 minutes on a real 43.8GB production shard (552M rows); this flat-
+# copy version does the equivalent work as a handful of `copyto!` calls per child.
+function _split_shard_file!(src_path::String, dest_dir::String, out_prefix::String,
+                            remaining_bits::Int, extra_bits::Int)
+    ps = _read_partial_shard(src_path)
+    nk = length(ps.kmers)
+    child_shift = remaining_bits - extra_bits
+    nchildren = 1 << extra_bits
+    child_mask = UInt64(nchildren - 1)
+    cidx(i) = Int((ps.kmers[i] >> child_shift) & child_mask)
+
+    lo = 1
+    for c in 0:(nchildren - 1)
+        hi = lo
+        while hi <= nk && cidx(hi) == c
+            hi += 1
+        end
+        n = hi - lo
+        kmers = Vector{UInt64}(undef, n)
+        row_id = Vector{UInt32}(undef, n)
+        offsets = Vector{UInt64}(undef, n + 1)
+        offsets[1] = 1
+        @inbounds for (j, i) in enumerate(lo:(hi - 1))
+            kmers[j] = ps.kmers[i]
+            row_id[j] = UInt32(j)
+            r = ps.row_id[i]
+            offsets[j + 1] = offsets[j] + (ps.offsets[r + 1] - ps.offsets[r])
+        end
+        pool_s = Vector{UInt32}(undef, offsets[end] - 1)
+        pool_c = Vector{UInt32}(undef, offsets[end] - 1)
+        @inbounds for (j, i) in enumerate(lo:(hi - 1))
+            r = ps.row_id[i]
+            a = ps.offsets[r]; len = ps.offsets[r + 1] - a
+            dst = offsets[j]
+            copyto!(pool_s, dst, ps.pool_s, a, len)
+            copyto!(pool_c, dst, ps.pool_c, a, len)
+        end
+        _write_partial_shard(joinpath(dest_dir, "$(out_prefix)_$(c).bin"),
+                             _PartialShard(kmers, row_id, offsets, pool_s, pool_c))
+        lo = hi
+    end
+    return nothing
+end
+
+# Decide/split/recurse for one leaf candidate (a base shard or an already-split child).
+# `paths` is that prefix's already-resolved file per root. Splits only when the COMBINED
+# size across every root exceeds `leaf_bytes` (never per-root -- assembly reads matching
+# leaf indices from every root at once, so an asymmetric split would misalign them) and
+# enough bits remain. `work/reshard/<rootbasename>/` is shared by the whole tree for that
+# root, so a retry only overwrites this prefix's own child files, never wipes the directory
+# (that would destroy already-completed sibling splits).
+#
+# The per-root splits run concurrently (`Threads.@spawn`, one task per root): each root's
+# file is independent (separate source file, separate `dest` directory), so there is no
+# shared mutable state to race on, and peak memory stays bounded by root-count x one file's
+# size (a handful of roots, a few hundred GB worst case) rather than growing with however
+# many *different* prefixes happen to be oversized -- this call is only ever reached for one
+# prefix at a time (`_reshard_leaves`'s outer loop and this function's own recursion into
+# children are both strictly sequential), which is the property that actually matters for
+# memory safety.
+function _resolve_leaf(root_dirs::Vector{String}, paths::Vector{String}, prefix::String,
+                       remaining_bits::Int, work::String, leaf_bytes::Int, extra_bits::Int,
+                       _done, _mark)::Vector{Vector{String}}
+    total = sum(filesize, paths)
+    (total <= leaf_bytes || remaining_bits < extra_bits) && return [paths]
+
+    marker = "reshard_$(prefix)"
+    if !_done(marker)
+        _log("  reshard: splitting $(prefix) ($(Base.format_bytes(total)) combined) into ",
+             "$(1 << extra_bits) children across $(length(root_dirs)) roots")
+        t0 = time()
+        tasks = [Threads.@spawn begin
+                    dest = joinpath(work, "reshard", basename(d))
+                    mkpath(dest)
+                    _split_shard_file!(src, dest, prefix, remaining_bits, extra_bits)
+                 end for (d, src) in zip(root_dirs, paths)]
+        foreach(fetch, tasks)
+        _mark(marker)
+        _log("    $(prefix) split in ", round(time() - t0; digits = 1), "s")
+    end
+
+    out = Vector{Vector{String}}()
+    for c in 0:((1 << extra_bits) - 1)
+        cprefix = "$(prefix)_$(c)"
+        cpaths = [joinpath(work, "reshard", basename(d), "$(cprefix).bin") for d in root_dirs]
+        append!(out, _resolve_leaf(root_dirs, cpaths, cprefix, remaining_bits - extra_bits,
+                                   work, leaf_bytes, extra_bits, _done, _mark))
+    end
+    return out
+end
+
+# Top-level entry: walks every base shard 0:(P-1) in order, resolving each to one or more
+# leaves. Ascending order (both here and in `_resolve_leaf`'s child loop) preserves the
+# global k-mer ordering `_assemble_v4` depends on, since a parent's k-mers are already
+# sorted and a split only ever refines, never reorders, that ordering.
+function _reshard_leaves(root_dirs::Vector{String}, P::Int, keep_shift::Int, work::String,
+                         leaf_bytes::Int, extra_bits::Int, _done, _mark)::Vector{Vector{String}}
+    _log("reshard: checking $P base shards (leaf target $(Base.format_bytes(leaf_bytes)), " *
+         "$(1 << extra_bits)-way fanout)")
+    leaves = Vector{Vector{String}}()
+    for p in 0:(P - 1)
+        prefix = "shard$(p)"
+        paths = [joinpath(d, "$(prefix).bin") for d in root_dirs]
+        append!(leaves, _resolve_leaf(root_dirs, paths, prefix, keep_shift, work,
+                                      leaf_bytes, extra_bits, _done, _mark))
+        (p + 1) % 32 == 0 && _log("  reshard: $(p + 1)/$P base shards checked, " *
+                                  "$(length(leaves)) leaves so far")
+    end
+    _log("reshard: done, $(length(leaves)) leaves from $P base shards")
+    return leaves
+end
+
 ## Assembly of the final .kct ##
 
 const _V4_BLOCK_KMERS = 64  # k-mers per packed block in the CountsLayer
 
-# Merge shard `q` of every root partial into per-k-mer rows, WITHOUT deduplication, in flat
-# CSR form (row i is `flat_s[off[i]:off[i+1]-1]` / `flat_c[...]`, no Vector-per-k-mer).
+# Merge one leaf's rows from every root partial into per-k-mer rows, WITHOUT deduplication,
+# in flat CSR form (row i is `flat_s[off[i]:off[i+1]-1]` / `flat_c[...]`, no Vector-per-k-mer).
 # Roots cover disjoint, ascending sample ranges and are already sample-sorted, so a k-mer's
 # row is just its per-root pieces concatenated (see ARCHITECTURE.md for why no dedup here,
-# unlike `_merge_partial_shards` at the wave/super level).
-function _merge_shard_rows(root_dirs::Vector{String}, q::Int)
-    shards = _PartialShard[_read_partial_shard(joinpath(d, "shard$(q).bin")) for d in root_dirs]
+# unlike `_merge_partial_shards` at the wave/super level). `paths` is one already-resolved
+# file per root for this leaf (a base `shard{p}.bin`, or a reshard child under `work/reshard`
+# if that shard was oversized -- see `_reshard_leaves`).
+function _merge_shard_rows(paths::Vector{String})
+    shards = _PartialShard[_read_partial_shard(p) for p in paths]
     ns = length(shards)
     cur = ones(Int, ns)
     lens = Int[length(s.kmers) for s in shards]
@@ -300,10 +437,15 @@ end
 # Transcode the merged root partials into one V4.0 table, packing each k-mer's row inline.
 # The blob streams to a temp file next to `out_path` rather than staying resident (it can be
 # 1-2 TB at full cohort, see ARCHITECTURE.md); RAM holds the k-mer array, block index and one
-# merge window. Per-shard merges run in a bounded parallel window; the pack loop is serial.
-function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_prefix::Int,
+# merge window. Per-leaf merges run in a bounded parallel window; the pack loop is serial.
+# `leaves` is the ordered, already-resolved leaf list from `_reshard_leaves` (ascending
+# global k-mer order): each entry is one already-resolved file path per root. A leaf is
+# either an original `shard{p}.bin` left alone, or a reshard child under `work/reshard`
+# for a shard that was oversized and split further -- see ARCHITECTURE.md.
+function _assemble_v4(leaves::Vector{Vector{String}}, kk::Int, Ab::Type, idx_prefix::Int,
                      total_samples::Int, out_path::String)
     B = _V4_BLOCK_KMERS
+    L = length(leaves)
     blobtmp = string(out_path, ".blob.tmp")
     rm(blobtmp; force = true)
 
@@ -330,10 +472,9 @@ function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_
             end
         end
 
-        p = 0
-        while p < P
-            chunk = p:min(p + W - 1, P - 1)
-            tasks = [Threads.@spawn _merge_shard_rows(root_dirs, q) for q in chunk]
+        nleaves_done = 0
+        for chunk in Iterators.partition(leaves, W)
+            tasks = [Threads.@spawn _merge_shard_rows(leafpaths) for leafpaths in chunk]
             for t in tasks
                 ks, roff, fs, fc = fetch(t)
                 append!(all_kmers, ks)
@@ -346,8 +487,8 @@ function _assemble_v4(root_dirs::Vector{String}, P::Int, kk::Int, Ab::Type, idx_
                     length(pend_off) - 1 == B && flush_block!()
                 end
             end
-            p += W
-            _log("  assemble: $(min(p, P))/$P shards packed, $(length(all_kmers)) k-mers, " *
+            nleaves_done += length(chunk)
+            _log("  assemble: $nleaves_done/$L leaves packed, $(length(all_kmers)) k-mers, " *
                  "$(Base.format_bytes(blob_len)) blob")
         end
         flush_block!()
@@ -430,6 +571,165 @@ function stream_kct_as_shards(kct_path::String, first_global_sample::Int, out_di
     return n_src
 end
 
+## Single-sample patch (post-assembly correction, no resharding, no new sample slot) ##
+
+# Replace one sample's contribution in an already-assembled .kct with a fresh, correct
+# recount, writing a NEW file at `out_path` (never touches `kct_path`). Built for the
+# one-off GTEx DS rebuild anomaly (slot 289/SRR614719 undercounted by a transient build-time
+# glitch, 28.1M vs the correct 335.5M k-mers -- see PAPER_TODO.md C11): a recount that was
+# never truncated, like the one `cram_hash` produces fresh, is a strict superset of whatever
+# a truncated build-time count wrote for the same sample, so this never needs to "merge"
+# counts for a single (kmer, sample) pair, only replace them outright.
+#
+# Streams the existing table once in its existing sorted order against the sorted corrected
+# recount -- a union merge, the same shape as `_merge_shard_rows`'s k-way merge -- and
+# repacks every row exactly as `_assemble_v4` does. A k-mer only the OLD (wrong) count
+# supported and the new recount does not is dropped entirely if that empties its row (should
+# not happen in practice given the superset property above, but costs nothing to handle).
+function patch_sample_counts(kct_path::String, sample_slot::Integer,
+                             corrected_counts::Dict{UInt64, UInt32}, out_path::String)
+    kct = load_kct(kct_path)
+    kct.counts === nothing && error("source KCT has no counts layer: $kct_path")
+    kct.biotype === nothing ||
+        error("source KCT has a biotype layer: patching reorders/add k-mers and would " *
+              "desync a per-k-mer-index biotype annotation -- not supported here")
+    return _patch_sample_counts(kct, Int(sample_slot), corrected_counts, out_path)
+end
+
+function _patch_sample_counts(kct::KCT{K, Ab, CountsLayer, Nothing, C, D}, sample_slot::Int,
+                              corrected_counts::Dict{UInt64, UInt32},
+                              out_path::String) where {K, Ab <: Alphabet, C <: Unsigned, D <: Unsigned}
+    cl = kct.counts
+    n_samples = Int(cl.n_samples.x)
+    1 <= sample_slot <= n_samples || error("sample_slot=$sample_slot out of range 1:$n_samples")
+    slot = UInt32(sample_slot)
+    idx_prefix = idx_prefix_size(kct)
+    n_existing = length(kct)
+
+    corrected_kmers = sort!(collect(keys(corrected_counts)))
+    nc = length(corrected_kmers)
+    _log("patch_sample_counts: sample $sample_slot, $n_existing existing k-mers, " *
+         "$nc corrected k-mers")
+
+    B = _V4_BLOCK_KMERS
+    blobtmp = string(out_path, ".blob.tmp")
+    rm(blobtmp; force = true)
+
+    all_kmers = UInt64[]
+    block_ptr = UInt64[]
+    npairs = 0
+    blob_len = 0
+    n_scrubbed = 0
+    n_touched = 0
+    n_new = 0
+
+    open(blobtmp, "w") do bio
+        blobbuf = UInt8[]
+        pend_s = UInt32[]; pend_c = UInt32[]; pend_off = Int[1]
+        function flush_block!()
+            n = length(pend_off) - 1
+            n == 0 && return
+            push!(block_ptr, UInt64(blob_len))
+            before = length(blobbuf)
+            _pack_block!(blobbuf, pend_s, pend_c, pend_off, n)
+            blob_len += length(blobbuf) - before
+            empty!(pend_s); empty!(pend_c); resize!(pend_off, 1)
+            if length(blobbuf) >= (1 << 26)
+                write(bio, blobbuf); empty!(blobbuf)
+            end
+        end
+        function emit_row!(kmer::UInt64, s::Vector{UInt32}, c::Vector{UInt32})
+            push!(all_kmers, kmer)
+            npairs += length(s)
+            append!(pend_s, s); append!(pend_c, c)
+            push!(pend_off, length(pend_s) + 1)
+            length(pend_off) - 1 == B && flush_block!()
+        end
+
+        # Driven by `_each_row`, which decodes each 64-k-mer block exactly once (unlike
+        # `_decode_row`, which is fine for scattered point lookups but would redecode the
+        # same block up to 64x over in a full-table walk like this one -- the table's own
+        # doc comment on `_decode_row` calls this out explicitly). `kseqs`/`st` track the
+        # matching k-mer VALUE in lockstep, since `_each_row` only hands back `(i, s, c)`;
+        # both advance by exactly one every callback, in the same 1..n_existing order.
+        ci = 1
+        kseqs = kct.kmer.seqs
+        it = iterate(kseqs)
+        _each_row(cl) do i, s, c
+            kbits, st = it
+            # corrected-only k-mers sorting strictly before this one: brand-new rows.
+            while ci <= nc && corrected_kmers[ci] < kbits
+                n_new += 1
+                kc = corrected_kmers[ci]
+                emit_row!(kc, UInt32[slot], UInt32[corrected_counts[kc]])
+                ci += 1
+            end
+            if ci <= nc && corrected_kmers[ci] == kbits
+                n_touched += 1
+                j = findfirst(==(slot), s)
+                s2 = j === nothing ? copy(s) : deleteat!(copy(s), j)
+                c2 = j === nothing ? copy(c) : deleteat!(copy(c), j)
+                ins = searchsortedfirst(s2, slot)
+                insert!(s2, ins, slot); insert!(c2, ins, corrected_counts[kbits])
+                emit_row!(kbits, s2, c2)
+                ci += 1
+            else
+                j = findfirst(==(slot), s)
+                if j === nothing
+                    emit_row!(kbits, s, c)
+                else
+                    n_scrubbed += 1
+                    s2 = deleteat!(copy(s), j); c2 = deleteat!(copy(c), j)
+                    isempty(s2) || emit_row!(kbits, s2, c2)
+                end
+            end
+            it = iterate(kseqs, st)
+
+            if i % 5_000_000 == 0
+                _log("  patch: $i/$n_existing existing k-mers walked, $(length(all_kmers)) " *
+                     "emitted, $(Base.format_bytes(blob_len)) blob, RSS $(round(_rss_gb(); digits=1)) GB")
+            end
+        end
+        # corrected-only k-mers sorting after every existing k-mer.
+        while ci <= nc
+            n_new += 1
+            kc = corrected_kmers[ci]
+            emit_row!(kc, UInt32[slot], UInt32[corrected_counts[kc]])
+            ci += 1
+        end
+        flush_block!()
+        isempty(blobbuf) || write(bio, blobbuf)
+    end
+
+    n_kmers = length(all_kmers)
+    seqs = DeltaArray{C, D}(all_kmers, DEFAULT_CHECKPOINT_INTERVAL)  # already globally sorted
+    all_kmers = UInt64[]
+    kl = KmerLayer{K, Ab, C, D}(seqs, _empty_kmer_idx(K, Ab(), C; prefix_size = idx_prefix))
+    cl_new = CountsLayer(B, block_ptr, UInt8[], n_kmers, n_samples)
+    kct_new = KCT(kl, cl_new)
+    compute_index!(kct_new.kmer; prefix_size = idx_prefix)
+    _log("patch_sample_counts: done. $n_kmers k-mers ($(n_kmers - n_existing >= 0 ? "+" : "")" *
+         "$(n_kmers - n_existing) net), $n_scrubbed rows had sample $sample_slot scrubbed, " *
+         "$n_touched rows updated in place, $n_new brand-new rows, " *
+         "blob $(Base.format_bytes(blob_len))")
+
+    open(out_path, "w") do io
+        write(io, 4.0)
+        _write_header_and_kmers(io, kct_new)
+        _write_counts_header(io, n_samples, n_kmers, B, length(block_ptr), blob_len, block_ptr)
+        open(blobtmp, "r") do bin
+            buf = Vector{UInt8}(undef, 1 << 26)
+            while !eof(bin)
+                n = readbytes!(bin, buf)
+                write(io, view(buf, 1:n))
+            end
+        end
+        _write_biotype(io, nothing)
+    end
+    rm(blobtmp; force = true)
+    return out_path
+end
+
 ## Pool-size tripwire ##
 
 function _partial_pool_bytes(dir::String, P::Int)
@@ -474,6 +774,15 @@ waves instead of growing with the cohort.
 - `wave_size`: samples counted and folded per wave
 - `shard_bits`: gives `2^shard_bits` prefix shards. `merge_fanin` partials are combined per
   hierarchical merge step
+- `reshard_leaf_bytes`: after merges finish, any shard whose size summed across every root
+  partial exceeds this is split further by `reshard_extra_bits` additional k-mer prefix
+  bits (recursively, until under this target), so assembly's concurrency window never has
+  to hold several oversized shards at once. Real amino-acid/nucleotide frequency is far
+  from uniform, so a handful of prefixes can otherwise dominate -- see ARCHITECTURE.md
+- `reshard_extra_bits`: fan-out per reshard split level (`2^reshard_extra_bits` children).
+  Fixes the bit position every split level consumes, so it must stay the same across a
+  resumed run against the same `out_dir` (checked and erred on mismatch, not silently
+  honoured)
 - `counter`: `counter(path)::Dict{UInt64,UInt32}` produces one sample's k-mer counts
   (default `jello_superthreaded_hash`, honouring `translate`)
 - `seeds`: `Vector{Tuple{String,Int}}` of `(existing .kct, first_global_sample)` folded in as
@@ -488,6 +797,7 @@ function build_kct_streaming(sample_paths::Vector{String};
         K::Int = 30, chunks::Int = 500_000, translate::Bool = false, double_strand::Bool = false,
         wave_size::Int = 100, shard_bits::Int = 8,
         merge_fanin::Int = 5, max_pool_gb::Real = 400, idx_prefix::Int = -1,
+        reshard_leaf_bytes::Int = 4_000_000_000, reshard_extra_bits::Int = 4,
         count_attempts::Int = 4,
         tmp_dir::String = _STREAM_TMP_DEFAULT, out_dir::String,
         out_path::String = joinpath(out_dir, "neokct_v4.kct"),
@@ -618,9 +928,29 @@ function build_kct_streaming(sample_paths::Vector{String};
         end
         _drain_ready!()
 
+        # reshard: split any shard whose combined size across every root exceeds
+        # `reshard_leaf_bytes` further, by `reshard_extra_bits` additional k-mer prefix
+        # bits, so assembly's concurrency window never has to hold several giant shards
+        # at once (see ARCHITECTURE.md). `reshard_extra_bits` fixes the bit position every
+        # split level consumes, so it's pinned the first time this stage runs against this
+        # `work` dir and checked on every later (resumed) call, the same way a seed's
+        # sample count is pinned via its own `.n` sidecar above.
+        root_dirs = String[joinpath(work, r) for r in roots]
+        ebfile = joinpath(mark_dir, "reshard_extra_bits.n")
+        if isfile(ebfile)
+            prior_eb = parse(Int, read(ebfile, String))
+            prior_eb == reshard_extra_bits ||
+                error("reshard_extra_bits=$reshard_extra_bits doesn't match this work dir's " *
+                      "prior run ($prior_eb); use the same value to resume, or delete $work")
+        else
+            write(ebfile, string(reshard_extra_bits))
+        end
+        leaves = _reshard_leaves(root_dirs, P, keep_shift, work, reshard_leaf_bytes,
+                                 reshard_extra_bits, _done, _mark)
+
         # assemble
-        _log("assembling -> $out_path  ($final_total samples)")
-        _assemble_v4([joinpath(work, r) for r in roots], P, kk, Ab, idx_prefix, final_total, out_path)
+        _log("assembling -> $out_path  ($final_total samples, $(length(leaves)) leaves)")
+        _assemble_v4(leaves, kk, Ab, idx_prefix, final_total, out_path)
         rm(work; recursive = true, force = true)
         return out_path
     finally

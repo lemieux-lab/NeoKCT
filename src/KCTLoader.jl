@@ -153,7 +153,7 @@ end
 
 function _read_counts(io::IO, n_kmers::Int64; in_memory::Bool=false)
     n_samples = read(io, Int64)
-    nk = read(io, Int64)                       # == n_kmers (header), kept for self-consistency
+    nk = read(io, Int64)  # == n_kmers (header), kept for self-consistency
     block_size = read(io, Int32)
     n_blocks = read(io, Int64)
     blob_len = read(io, Int64)

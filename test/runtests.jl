@@ -293,6 +293,184 @@ _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
         @test kct.counts[findfirst(kct.kmer, x)] == UInt32[get(s, x, UInt32(0)) for s in full]
       end
     end
+
+    @testset "adaptive reshard" begin
+      # 90 bytes is verified (not guessed) against this fixture's real shard sizes: every
+      # base shard's combined-across-2-roots size is 100-200 bytes, safely above it, so every
+      # shard actually splits at least once; an empty child's combined floor is 64 bytes,
+      # safely below it, so empty branches terminate in one check instead of recursing to
+      # the bit-exhaustion depth limit.
+      @testset "forced split (default fanout) reproduces the un-resharded result" begin
+        ver, kct = stream_build(wave_size = 2, shard_bits = 2, merge_fanin = 2,
+                                reshard_leaf_bytes = 90)
+        @test ver == 4.0
+        @test collect(kct.kmer.seqs) == allk
+        for x in allk
+          @test kct.counts[findfirst(kct.kmer, x)] == _expected_cv(S, x)
+        end
+      end
+
+      @testset "deep recursion with a small fanout still reproduces the result" begin
+        # K3=0x40001 and K6=0x40ABC share an 8-bit prefix beyond shard_bits=2, so a 2-way
+        # fanout needs several levels to separate them -- exercises real recursion depth,
+        # not just one split.
+        ver, kct = stream_build(wave_size = 2, shard_bits = 2, merge_fanin = 2,
+                                reshard_leaf_bytes = 90, reshard_extra_bits = 1)
+        @test ver == 4.0
+        @test collect(kct.kmer.seqs) == allk
+        for x in allk
+          @test kct.counts[findfirst(kct.kmer, x)] == _expected_cv(S, x)
+        end
+      end
+
+      @testset "_split_shard_file! preserves every (kmer, sample, count) triple" begin
+        mktempdir() do dir
+          # kLow and kHigh share a pooled row (identical sample/count pattern) despite
+          # landing in DIFFERENT children -- the real-world case a naive memoized
+          # old_row_id -> new_row_id shortcut would misassign.
+          rp = _RowPool()
+          shared = Tuple{UInt32, UInt32}[(UInt32(1), UInt32(9))]
+          r_shared = _intern_row!(rp, shared)
+          pairs_mid = Tuple{UInt32, UInt32}[(UInt32(2), UInt32(3)), (UInt32(5), UInt32(7))]
+          r_mid = _intern_row!(rp, pairs_mid)
+
+          kLow = UInt64(1)    # top bit (of a 5-bit window) 0 -> child 0
+          kMid = UInt64(15)   # top bit 0 -> child 0, own row
+          kHigh = UInt64(17)  # top bit 1 -> child 1, shares kLow's row
+          ps = _PartialShard(UInt64[kLow, kMid, kHigh], UInt32[r_shared, r_mid, r_shared],
+                             rp.offsets, rp.pool_s, rp.pool_c)
+          src = joinpath(dir, "src.bin")
+          _write_partial_shard(src, ps)
+
+          _split_shard_file!(src, dir, "x", 5, 1)
+
+          expected = Set{Tuple{UInt64, UInt32, UInt32}}()
+          for p in shared; push!(expected, (kLow, p[1], p[2])); end
+          for p in pairs_mid; push!(expected, (kMid, p[1], p[2])); end
+          for p in shared; push!(expected, (kHigh, p[1], p[2])); end
+
+          got = Set{Tuple{UInt64, UInt32, UInt32}}()
+          for c in 0:1
+            cps = _read_partial_shard(joinpath(dir, "x_$(c).bin"))
+            for i in eachindex(cps.kmers)
+              r = cps.row_id[i]
+              for t in cps.offsets[r]:(cps.offsets[r + 1] - 1)
+                push!(got, (cps.kmers[i], cps.pool_s[t], cps.pool_c[t]))
+              end
+            end
+          end
+          @test got == expected
+        end
+      end
+
+      @testset "resumability: redoing a prefix doesn't mix stale children" begin
+        mktempdir() do outer; mktempdir() do rootdir
+          ps = _PartialShard(UInt64[0b00, 0b01, 0b10, 0b11], UInt32[1, 2, 3, 4],
+                             UInt64[1, 2, 3, 4, 5], UInt32[10, 20, 30, 40], UInt32[1, 1, 1, 1])
+          _write_partial_shard(joinpath(rootdir, "shard0.bin"), ps)
+          work = joinpath(outer, "work"); mkpath(work)
+          mark_dir = joinpath(work, "_markers"); mkpath(mark_dir)
+          _done(name) = isfile(joinpath(mark_dir, name))
+          _mark(name) = touch(joinpath(mark_dir, name))
+
+          leaves1 = _reshard_leaves([rootdir], 1, 2, work, 1, 1, _done, _mark)
+          @test length(leaves1) == 4  # keep_shift=2, extra_bits=1 -> exactly 2 levels
+
+          # Simulate a crash recovered after the top split wrote its children but before it
+          # was marked: redo must only re-split this prefix, not disturb already-marked
+          # deeper levels, and must still land on the same final leaf set.
+          rm(joinpath(mark_dir, "reshard_shard0"))
+          leaves2 = _reshard_leaves([rootdir], 1, 2, work, 1, 1, _done, _mark)
+          @test leaves2 == leaves1
+          for leafpaths in leaves2
+            @test all(isfile, leafpaths)
+          end
+        end; end
+      end
+
+      @testset "reshard_extra_bits is pinned across resumed runs" begin
+        mktempdir() do tmp; mktempdir() do out
+          # A huge leaf target means nothing actually splits here -- this call only needs to
+          # reach the reshard stage once successfully, so the pin file gets written with
+          # reshard_extra_bits=4 (a tiny leaf_bytes, as used elsewhere in this testset to
+          # force real splitting, would be wasteful and pointless for this test: the pin
+          # file is written unconditionally before any splitting decision is made).
+          build_kct_streaming(["s1"]; K = 12, translate = true, wave_size = 1, shard_bits = 2,
+                              tmp_dir = tmp, out_dir = out, counter = (p -> deepcopy(S[1])),
+                              reshard_leaf_bytes = 1_000_000_000, reshard_extra_bits = 4,
+                              resume = true)
+          # A fresh call against the SAME out_dir with a different reshard_extra_bits must
+          # error rather than silently misreading the bit position already-split children
+          # were written at (work was deleted by the successful run above, so re-seed it
+          # with one marker to simulate an interrupted run that got as far as pinning it).
+          work = joinpath(out, "streaming_work"); mark_dir = joinpath(work, "_markers")
+          mkpath(mark_dir)
+          write(joinpath(mark_dir, "reshard_extra_bits.n"), "4")
+          @test_throws ErrorException build_kct_streaming(
+              ["s1"]; K = 12, translate = true, wave_size = 1, shard_bits = 2,
+              tmp_dir = tmp, out_dir = out, counter = (p -> deepcopy(S[1])),
+              reshard_leaf_bytes = 1, reshard_extra_bits = 1, resume = true)
+        end; end
+      end
+    end
+
+    @testset "patch_sample_counts" begin
+      K_new = UInt64(0x40500)  # between K3 and K6, present in neither S nor allk
+      corrected = Dict{UInt64, UInt32}(K1 => 99, K3 => 1, K_new => 42)  # no K2 -> scrub test
+
+      kct2 = mktempdir() do tmp; mktempdir() do out; mktempdir() do patchdir
+        src = build_kct_streaming(paths; K = 12, translate = true, tmp_dir = tmp, out_dir = out,
+                                  counter = mkcounter(cmap), wave_size = 2, shard_bits = 2, merge_fanin = 2)
+        dst = joinpath(patchdir, "patched.kct")
+        patch_sample_counts(src, 1, corrected, dst)
+        load_kct(dst)
+      end; end; end
+
+      @test kct2.counts.n_samples.x == 6  # patching never adds a sample slot
+      @test collect(kct2.kmer.seqs) == sort(vcat(allk, [K_new]))
+
+      expected1 = copy(_expected_cv(S, K1)); expected1[1] = 99  # touched: count replaced
+      @test kct2.counts[findfirst(kct2.kmer, K1)] == expected1
+
+      expected2 = copy(_expected_cv(S, K2)); expected2[1] = 0  # scrubbed: absent from corrected
+      @test kct2.counts[findfirst(kct2.kmer, K2)] == expected2
+
+      @test kct2.counts[findfirst(kct2.kmer, K3)] == _expected_cv(S, K3)  # same value either way
+
+      expectednew = zeros(UInt32, 6); expectednew[1] = 42  # brand-new k-mer, one-sample row
+      @test kct2.counts[findfirst(kct2.kmer, K_new)] == expectednew
+
+      for x in (K4, K5, K6)  # sample 1 never touched these -- must round-trip unchanged
+        @test kct2.counts[findfirst(kct2.kmer, x)] == _expected_cv(S, x)
+      end
+
+      @testset "a row scrubbed down to zero samples is dropped entirely" begin
+        Ksolo = UInt64(0x00300)  # present only in sample "a", absent from the corrected recount
+        Kboth = UInt64(0x00400)  # present in both, untouched by the patch
+        cm2 = Dict("a" => Dict{UInt64, UInt32}(Ksolo => 7, Kboth => 2),
+                   "b" => Dict{UInt64, UInt32}(Kboth => 3))
+        kct3 = mktempdir() do tmp; mktempdir() do out; mktempdir() do patchdir
+          src = build_kct_streaming(["a", "b"]; K = 12, translate = true, wave_size = 1, shard_bits = 2,
+                                    merge_fanin = 2, tmp_dir = tmp, out_dir = out,
+                                    counter = (p -> deepcopy(cm2[p])))
+          dst = joinpath(patchdir, "patched.kct")
+          patch_sample_counts(src, 1, Dict{UInt64, UInt32}(Kboth => 2), dst)
+          load_kct(dst)
+        end; end; end
+        @test collect(kct3.kmer.seqs) == [Kboth]
+        @test kct3.counts[findfirst(kct3.kmer, Kboth)] == UInt32[2, 3]
+      end
+
+      @testset "out-of-range sample_slot errors" begin
+        mktempdir() do tmp; mktempdir() do out; mktempdir() do patchdir
+          src = build_kct_streaming(paths; K = 12, translate = true, tmp_dir = tmp, out_dir = out,
+                                    counter = mkcounter(cmap), wave_size = 2, shard_bits = 2, merge_fanin = 2)
+          dst = joinpath(patchdir, "patched.kct")
+          @test_throws ErrorException patch_sample_counts(src, 0, Dict{UInt64, UInt32}(), dst)
+          @test_throws ErrorException patch_sample_counts(src, 7, Dict{UInt64, UInt32}(), dst)
+        end; end; end
+      end
+    end
   end
 
   @testset "5. Rolling k-mer counter and DNA streaming build" begin
