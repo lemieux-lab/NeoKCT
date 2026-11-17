@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360">
+  <defs>
+    <style>
+      .card { fill:#151f1b; }
+      .hdr  { fill:#1c2822; stroke:#2a3a33; stroke-width:1; }
+      .lbits{ fill:#1e4638; stroke:#2a3a33; stroke-width:1; }
+      .body { fill:#dcefe8; }
+      .gbits{ fill:#0d7d63; stroke:#2a3a33; stroke-width:1; }
+      .cbits{ fill:#3ecfa2; stroke:#2a3a33; stroke-width:1; }
+      .exc  { fill:#3a231c; stroke:#e58468; stroke-width:1; }
+      .lbl  { font-family:'JetBrains Mono', monospace; font-size:13px; fill:#142420; }
+      .lblL { font-family:'JetBrains Mono', monospace; font-size:13px; fill:#e8efec; }
+      .cap  { font-family:'Archivo', sans-serif; font-size:12px; fill:#9db3ab; }
+      .leg  { font-family:'Archivo', sans-serif; font-size:12.5px; fill:#9db3ab; }
+      .legB { font-family:'Archivo', sans-serif; font-size:12.5px; fill:#e8efec; font-weight:700; }
+    </style>
+  </defs>
+
+  <rect class="card" x="0" y="0" width="900" height="360" rx="14"/>
+  <text class="cap" x="24" y="28">block layout in blob, starting at block_ptr[b] (byte-aligned)</text>
+
+  <!-- header row -->
+  <g transform="translate(24,44)">
+    <rect class="hdr" x="0"   y="0" width="90"  height="40"/>
+    <rect class="hdr" x="90"  y="0" width="120" height="40"/>
+    <rect class="hdr" x="210" y="0" width="120" height="40"/>
+    <rect class="hdr" x="330" y="0" width="120" height="40"/>
+    <rect class="hdr" x="450" y="0" width="402" height="40"/>
+    <text class="lblL" x="45"  y="25" text-anchor="middle">nk</text>
+    <text class="lblL" x="150" y="25" text-anchor="middle">lbits</text>
+    <text class="lblL" x="270" y="25" text-anchor="middle">gbits</text>
+    <text class="lblL" x="390" y="25" text-anchor="middle">cbits</text>
+    <text class="lblL" x="651" y="25" text-anchor="middle">varint n_exc</text>
+  </g>
+
+  <!-- packed body row -->
+  <g transform="translate(24,104)">
+    <rect class="lbits" x="0"   y="0" width="90"  height="50"/>
+    <rect class="gbits" x="90"  y="0" width="380" height="50"/>
+    <rect class="cbits" x="470" y="0" width="382" height="50"/>
+    <text class="lblL" x="45"  y="24" text-anchor="middle">nk row</text>
+    <text class="lblL" x="45"  y="42" text-anchor="middle">lengths</text>
+    <text class="lblL" x="280" y="24" text-anchor="middle">T sample gaps</text>
+    <text class="lblL" x="280" y="42" text-anchor="middle">(gbits each)</text>
+    <text class="lbl"  x="661" y="24" text-anchor="middle">T counts</text>
+    <text class="lbl"  x="661" y="42" text-anchor="middle">(cbits each)</text>
+  </g>
+
+  <!-- exception row -->
+  <g transform="translate(24,168)">
+    <rect class="exc" x="0" y="0" width="852" height="44"/>
+    <text class="lblL" x="426" y="27" text-anchor="middle">byte-aligned - n_exc x [varint index, UInt32 value]</text>
+  </g>
+
+  <!-- legend -->
+  <g transform="translate(24,234)">
+    <text class="legB" x="0" y="0">lbits</text>
+    <text class="leg"  x="55" y="0">width for the longest row in the block</text>
+    <text class="legB" x="0" y="22">gbits</text>
+    <text class="leg"  x="55" y="22">width for the largest sample-to-sample gap</text>
+    <text class="legB" x="0" y="44">cbits</text>
+    <text class="leg"  x="55" y="44">width for the largest count, capped at 16 bits</text>
+    <text class="leg"  x="0" y="66">counts &gt;= 65535 (~0.001% of pairs) spill to the exception list instead</text>
+  </g>
+</svg>

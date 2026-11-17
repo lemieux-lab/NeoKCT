@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="380" viewBox="0 0 1100 380">
+  <defs>
+    <style>
+      .card    { fill:#151f1b; }
+      .panel   { fill:#1c2822; stroke:#2a3a33; stroke-width:1.5; }
+      .title   { fill:#e8efec; font-family:'Archivo', sans-serif; font-size:17px; font-weight:700; }
+      .ref     { fill:#9db3ab; font-family:'Archivo', sans-serif; font-size:13px; }
+      .readOk  { stroke:#3ecfa2; stroke-width:3; fill:none; marker-end:url(#headOk); }
+      .readBad { stroke:#e58468; stroke-width:3; fill:none; marker-end:url(#headBad); }
+      .mark    { font-family:'Archivo', sans-serif; font-size:18px; font-weight:700; }
+      .markOk  { fill:#3ecfa2; }
+      .markBad { fill:#e58468; }
+      .foot    { fill:#9db3ab; font-family:'Archivo', sans-serif; font-size:13px; }
+    </style>
+    <marker id="headOk" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#3ecfa2"/>
+    </marker>
+    <marker id="headBad" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#e58468"/>
+    </marker>
+  </defs>
+
+  <rect class="card" x="0" y="0" width="1100" height="380" rx="14"/>
+
+  <!-- Panel A: single-strand counting applied to GTEx's unstranded reads -->
+  <rect class="panel" x="30" y="30" width="500" height="280" rx="10"/>
+  <text class="title" x="50" y="58">Single-strand counting (unstranded reads)</text>
+  <text class="ref" x="50" y="82">coding strand &#8594;  (unstranded: each read's direction is random)</text>
+
+  <!-- 4 reads, each its own row, mark always at x=440 regardless of arrow direction -->
+  <path class="readOk" d="M70,120 L220,120"/>
+  <text class="mark markOk" x="350" y="126">&#10003; counted</text>
+
+  <path class="readBad" d="M220,170 L70,170"/>
+  <text class="mark markBad" x="350" y="176">&#10007; dropped</text>
+
+  <path class="readOk" d="M70,220 L220,220"/>
+  <text class="mark markOk" x="350" y="226">&#10003; counted</text>
+
+  <path class="readBad" d="M220,270 L70,270"/>
+  <text class="mark markBad" x="350" y="276">&#10007; dropped</text>
+
+  <!-- Panel B: double-strand -->
+  <rect class="panel" x="570" y="30" width="500" height="280" rx="10"/>
+  <text class="title" x="590" y="58">Double-strand counting (fixes the undercount)</text>
+  <text class="ref" x="590" y="82">coding strand &#8594;  (orientation stops mattering)</text>
+
+  <path class="readOk" d="M610,120 L760,120"/>
+  <text class="mark markOk" x="890" y="126">&#10003; counted</text>
+
+  <path class="readOk" d="M760,170 L610,170"/>
+  <text class="mark markOk" x="890" y="176">&#10003; counted</text>
+
+  <path class="readOk" d="M610,220 L760,220"/>
+  <text class="mark markOk" x="890" y="226">&#10003; counted</text>
+
+  <path class="readOk" d="M760,270 L610,270"/>
+  <text class="mark markOk" x="890" y="276">&#10003; counted</text>
+
+  <text class="foot" x="30" y="337">Same 4 reads in both panels. On an unstranded library each read's direction is random, so about half match the coding strand.</text>
+  <text class="foot" x="30" y="358">Double-strand counting also counts each read's reverse complement, so every read contributes.</text>
+</svg>

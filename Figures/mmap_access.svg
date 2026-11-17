@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 700" width="1700" height="700" font-family="'Archivo', sans-serif">
+<rect x="0" y="0" width="1700" height="700" rx="14" fill="#151f1b"/>
+<defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9db3ab"/></marker></defs>
+<rect x="40" y="20" width="1620" height="76" rx="10" fill="none" stroke="#f0b429" stroke-width="2"/>
+<text x="60" y="52" fill="#f0b429" font-size="21">Query tile</text>
+<text x="60" y="80" fill="#e8efec" font-size="19">findfirst in the RAM index (~36 µs, never touches the blob), row i is in block (i-1)÷64, block_ptr gives its byte offset in the blob. Here the block is #14.</text>
+<path d="M792,96 L792,163" stroke="#9db3ab" stroke-width="2" fill="none" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+<text x="40" y="192" fill="#e8efec" font-size="20">1 · Nothing cached yet</text>
+<text x="40" y="218" fill="#9db3ab" font-size="16">blob blocks, all on NFS</text>
+<rect x="360" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="390" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="420" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="450" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="480" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="510" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="540" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="570" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="600" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="630" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="660" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="690" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="720" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="750" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="780" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="810" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="840" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="870" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="900" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="930" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="960" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="990" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1020" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1050" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1080" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1110" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1140" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1170" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1200" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1230" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1260" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1290" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1320" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1350" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1380" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1410" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1440" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1470" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1500" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1530" y="170" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="779" y="168" width="29" height="60" rx="4" fill="none" stroke="#f0b429" stroke-width="3"/>
+<text x="40" y="342" fill="#e8efec" font-size="20">2 · Cold touch of block 14</text>
+<text x="40" y="368" fill="#9db3ab" font-size="16">page fault, ~17 ms</text>
+<rect x="360" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="390" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="420" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="450" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="480" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="510" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="540" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="570" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="600" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="630" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="660" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="690" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="720" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="750" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="780" y="320" width="27" height="56" rx="3" fill="#e58468"/>
+<rect x="810" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="840" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="870" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="900" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="930" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="960" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="990" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1020" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1050" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1080" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1110" y="320" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1140" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1170" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1200" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1230" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1260" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1290" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1320" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1350" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1380" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1410" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1440" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1470" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1500" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1530" y="320" width="27" height="56" rx="3" fill="#2a3a34"/>
+<path d="M780,314 L780,306 L1137,306 L1137,314" stroke="#e58468" stroke-width="2" fill="none"/>
+<text x="958.5" y="298" text-anchor="middle" fill="#e58468" font-size="16">one ~1 MB read from NFS brings in block 14 and the blocks that follow (a few hundred, drawn as 12)</text>
+<text x="40" y="512" fill="#e8efec" font-size="20">3 · The next lookups</text>
+<text x="40" y="538" fill="#9db3ab" font-size="16">sorted tiles, neighbors are adjacent</text>
+<rect x="360" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="390" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="420" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="450" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="480" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="510" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="540" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="570" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="600" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="630" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="660" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="690" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="720" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="750" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="780" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="810" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="840" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="870" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="900" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="930" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="960" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="990" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1020" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1050" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1080" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1110" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1140" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1170" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1200" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1230" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1260" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1290" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1320" y="490" width="27" height="56" rx="3" fill="#2a3a34"/>
+<rect x="1350" y="490" width="27" height="56" rx="3" fill="#e58468"/>
+<rect x="1380" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1410" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1440" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1470" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1500" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="1530" y="490" width="27" height="56" rx="3" fill="#3ecfa2"/>
+<rect x="809" y="488" width="29" height="60" rx="4" fill="none" stroke="#f0b429" stroke-width="3"/>
+<rect x="839" y="488" width="29" height="60" rx="4" fill="none" stroke="#f0b429" stroke-width="3"/>
+<rect x="929" y="488" width="29" height="60" rx="4" fill="none" stroke="#f0b429" stroke-width="3"/>
+<rect x="1019" y="488" width="29" height="60" rx="4" fill="none" stroke="#f0b429" stroke-width="3"/>
+<path d="M780,484 L780,476 L1137,476 L1137,484" stroke="#3ecfa2" stroke-width="2" fill="none"/>
+<text x="958.5" y="468" text-anchor="middle" fill="#3ecfa2" font-size="16">blocks 15, 16, 19, 22 are already cached, ~61 µs each, no disk</text>
+<path d="M792,228 L792,262" stroke="#9db3ab" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+<path d="M1362,434 L1362,460" stroke="none" fill="none"/>
+<rect x="360" y="560" width="14" height="14" rx="3" fill="#e58468"/><text x="380" y="572" fill="#9db3ab" font-size="15">cold first touch, pays the disk read</text>
+<rect x="690" y="560" width="14" height="14" rx="3" fill="#3ecfa2"/><text x="710" y="572" fill="#9db3ab" font-size="15">in page cache, warm</text>
+<rect x="920" y="560" width="14" height="14" rx="3" fill="#2a3a34"/><text x="940" y="572" fill="#9db3ab" font-size="15">not cached yet</text>
+<rect x="1100" y="558" width="14" height="14" rx="3" fill="none" stroke="#f0b429" stroke-width="3"/><text x="1120" y="572" fill="#9db3ab" font-size="15">block the query asks for</text>
+<rect x="40" y="595" width="790" height="80" rx="10" fill="none" stroke="#e58468" stroke-width="2"/>
+<text x="60" y="627" fill="#e58468" font-size="21">Random access: every lookup lands outside any cached window</text>
+<text x="60" y="656" fill="#e8efec" font-size="18">~17 ms each, B2 sweep of 1e6 rows ~387x slower than in RAM</text>
+<rect x="870" y="595" width="790" height="80" rx="10" fill="none" stroke="#3ecfa2" stroke-width="2"/>
+<text x="890" y="627" fill="#3ecfa2" font-size="21">Sorted peptide query: one cold read serves many lookups</text>
+<text x="890" y="656" fill="#e8efec" font-size="18">1,245 peptides in 0.5 s, load time is the whole cost</text>
+<text x="1660" y="692" text-anchor="end" fill="#9db3ab" font-size="13">Derived, not measured: block ~2.4 KB = 64 x 37.76 B, so a 1 MB read spans a few hundred blocks. Cell counts and positions illustrative, not to scale.</text>
+<path d="M1350,484 L1350,476 L1557,476 L1557,484" stroke="#e58468" stroke-width="2" fill="none"/>
+<text x="1453.5" y="468" text-anchor="middle" fill="#e58468" font-size="16">outside the window: new cold read</text>
+</svg>

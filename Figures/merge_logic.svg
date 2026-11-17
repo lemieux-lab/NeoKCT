@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 700" width="1700" height="700" font-family="'Archivo', sans-serif">
+<rect x="0" y="0" width="1700" height="700" rx="14" fill="#151f1b"/>
+<defs><marker id="arr" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9db3ab"/></marker></defs>
+<rect x="40" y="70" width="260" height="170" rx="10" fill="none" stroke="#3ecfa2" stroke-width="2"/>
+<text x="170" y="108" text-anchor="middle" fill="#e8efec" font-size="22">Counting waves</text>
+<text x="170" y="142" text-anchor="middle" fill="#9db3ab" font-size="18">25 waves x 100 samples</text>
+<text x="170" y="170" text-anchor="middle" fill="#9db3ab" font-size="18">each wave writes its own</text>
+<text x="170" y="196" text-anchor="middle" fill="#9db3ab" font-size="18">256 prefix shards</text>
+<path d="M300,155 L372,155" stroke="#9db3ab" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+<text x="336" y="140" text-anchor="middle" fill="#9db3ab" font-size="15">merge 5</text>
+<text x="336" y="182" text-anchor="middle" fill="#9db3ab" font-size="15">at a time</text>
+<text x="385" y="36" fill="#e8efec" font-size="21">5 roots after the hierarchical merge, each holds all 256 shards</text>
+<text x="385" y="110" fill="#9db3ab" font-size="17">root 1 (1-500)</text>
+<rect x="600" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="640" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="680" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="720" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="760" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="800" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="840" y="80" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="880" y="80" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="920" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="960" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1000" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1040" y="80" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<text x="385" y="162" fill="#9db3ab" font-size="17">root 2 (501-1000)</text>
+<rect x="600" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="640" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="680" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="720" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="760" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="800" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="840" y="132" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="880" y="132" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="920" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="960" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1000" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1040" y="132" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<text x="385" y="214" fill="#9db3ab" font-size="17">root 3 (1001-1500)</text>
+<rect x="600" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="640" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="680" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="720" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="760" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="800" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="840" y="184" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="880" y="184" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="920" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="960" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1000" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1040" y="184" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<text x="385" y="266" fill="#9db3ab" font-size="17">root 4 (1501-2000)</text>
+<rect x="600" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="640" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="680" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="720" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="760" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="800" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="840" y="236" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="880" y="236" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="920" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="960" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1000" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1040" y="236" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<text x="385" y="318" fill="#9db3ab" font-size="17">root 5 (2001-2486)</text>
+<rect x="600" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="640" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="680" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="720" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="760" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="800" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="840" y="288" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="880" y="288" width="36" height="40" rx="4" fill="#e58468" fill-opacity="1"/>
+<rect x="920" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="960" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1000" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<rect x="1040" y="288" width="36" height="40" rx="4" fill="#3ecfa2" fill-opacity="0.55"/>
+<text x="1088" y="212" fill="#9db3ab" font-size="22">...</text>
+<text x="385" y="356" fill="#9db3ab" font-size="16">shard index, 12 of 256 shown</text>
+<text x="385" y="378" fill="#9db3ab" font-size="16">orange = Leu / Ser prefixes, far larger than the rest</text>
+<rect x="837" y="74" width="42" height="254" rx="6" fill="none" stroke="#f0b429" stroke-width="3"/>
+<text x="857.0" y="66" text-anchor="middle" fill="#f0b429" font-size="16">one shard = 5 files</text>
+<rect x="1130" y="60" width="530" height="270" rx="10" fill="none" stroke="#e58468" stroke-width="2"/>
+<text x="1150" y="96" fill="#e58468" font-size="22">Why uneven shards hurt</text>
+<text x="1150" y="132" fill="#e8efec" font-size="18">256 shards x 5 roots = 1,280 files</text>
+<text x="1150" y="164" fill="#e8efec" font-size="18">Assembly workers each take one shard:</text>
+<text x="1150" y="196" fill="#e8efec" font-size="18">read its 5 files in full, build a merged copy</text>
+<text x="1150" y="228" fill="#e8efec" font-size="18">Up to 8 workers at once, on adjacent shards</text>
+<text x="1150" y="260" fill="#e8efec" font-size="18">Adjacent shards are the giants (Leu, Ser)</text>
+<text x="1150" y="300" fill="#9db3ab" font-size="16">shard 82: 198 GiB combined, others ~1 MB</text>
+<path d="M857.0,330 L857.0,392" stroke="#f0b429" stroke-width="2" fill="none" stroke-dasharray="6 5" marker-end="url(#arr)"/>
+<text x="40" y="410" fill="#e8efec" font-size="21">Merging one shard: a k-mer's row is its pieces from each root, concatenated in root order</text>
+<rect x="40" y="440" width="210" height="80" rx="8" fill="none" stroke="#9db3ab" stroke-width="1.5"/>
+<text x="145" y="470" text-anchor="middle" fill="#9db3ab" font-size="17">root 1</text>
+<text x="145" y="500" text-anchor="middle" fill="#e8efec" font-size="18" font-family="'JetBrains Mono', monospace">(s12,3) (s40,1)</text>
+<path d="M145,520 L145,560 L610,560" stroke="#9db3ab" stroke-width="1.5" fill="none"/>
+<rect x="270" y="440" width="210" height="80" rx="8" fill="none" stroke="#9db3ab" stroke-width="1.5"/>
+<text x="375" y="470" text-anchor="middle" fill="#9db3ab" font-size="17">root 2</text>
+<text x="375" y="500" text-anchor="middle" fill="#e8efec" font-size="18" font-family="'JetBrains Mono', monospace">(s530,2)</text>
+<path d="M375,520 L375,560 L610,560" stroke="#9db3ab" stroke-width="1.5" fill="none"/>
+<rect x="500" y="440" width="210" height="80" rx="8" fill="none" stroke="#9db3ab" stroke-width="1.5"/>
+<text x="605" y="470" text-anchor="middle" fill="#9db3ab" font-size="17">root 3</text>
+<text x="605" y="500" text-anchor="middle" fill="#e8efec" font-size="18" font-family="'JetBrains Mono', monospace">no entry</text>
+<path d="M605,520 L605,560 L610,560" stroke="#9db3ab" stroke-width="1.5" fill="none"/>
+<rect x="730" y="440" width="210" height="80" rx="8" fill="none" stroke="#9db3ab" stroke-width="1.5"/>
+<text x="835" y="470" text-anchor="middle" fill="#9db3ab" font-size="17">root 4</text>
+<text x="835" y="500" text-anchor="middle" fill="#e8efec" font-size="18" font-family="'JetBrains Mono', monospace">(s1710,5)</text>
+<path d="M835,520 L835,560 L610,560" stroke="#9db3ab" stroke-width="1.5" fill="none"/>
+<rect x="960" y="440" width="210" height="80" rx="8" fill="none" stroke="#9db3ab" stroke-width="1.5"/>
+<text x="1065" y="470" text-anchor="middle" fill="#9db3ab" font-size="17">root 5</text>
+<text x="1065" y="500" text-anchor="middle" fill="#e8efec" font-size="18" font-family="'JetBrains Mono', monospace">(s2201,1)</text>
+<path d="M1065,520 L1065,560 L610,560" stroke="#9db3ab" stroke-width="1.5" fill="none"/>
+<path d="M610,560 L610,586" stroke="#9db3ab" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+<rect x="40" y="590" width="1160" height="70" rx="8" fill="none" stroke="#3ecfa2" stroke-width="2"/>
+<text x="60" y="620" fill="#3ecfa2" font-size="18">k-mer X, full row</text>
+<text x="60" y="648" fill="#e8efec" font-size="19" font-family="'JetBrains Mono', monospace">(s12,3) (s40,1) (s530,2) (s1710,5) (s2201,1)</text>
+<text x="1230" y="620" fill="#9db3ab" font-size="16">roots cover disjoint, ascending sample ranges,</text>
+<text x="1230" y="646" fill="#9db3ab" font-size="16">so concatenating is enough, no re-sort</text>
+<text x="1660" y="690" text-anchor="end" fill="#9db3ab" font-size="13">Counts, sample ids and shard positions illustrative. 5 roots, 256 shards, ~500 samples per root (derived), 198 GiB are real or derived from the build.</text>
+</svg>

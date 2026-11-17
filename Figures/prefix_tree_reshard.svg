@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 760" width="1500" height="760" font-family="'Archivo', sans-serif">
+<rect x="0" y="0" width="1500" height="760" rx="14" fill="#151f1b"/>
+<text x="40" y="40" fill="#e8efec" font-size="22" font-weight="700">Adaptive reshard on the GTEx build: a real branch, shard42</text>
+<text x="40" y="98" fill="#e8efec" font-size="18">256 base shards</text>
+<text x="40" y="122" fill="#9db3ab" font-size="15">73 over the 3.7 GiB cap, 183 untouched</text>
+<rect x="350" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="372.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">39</text>
+<rect x="400" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="422.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">40</text>
+<rect x="450" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="472.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">41</text>
+<rect x="500" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="522.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">42</text>
+<rect x="550" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="572.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">43</text>
+<rect x="600" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="622.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">44</text>
+<rect x="650" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="672.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">45</text>
+<rect x="700" y="80" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="722.0" y="107.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">46</text>
+<text x="760" y="110" fill="#9db3ab" font-size="20">...</text>
+<text x="522.0" y="72" text-anchor="middle" fill="#e58468" font-size="14">72.7 GiB</text>
+<path d="M522.0,124 L372.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L422.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L472.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L522.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L572.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L622.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L672.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L722.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L772.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L822.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L872.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L922.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L972.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L1022.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L1072.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M522.0,124 L1122.0,230" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<text x="40" y="248" fill="#e8efec" font-size="18">shard42 → 16 children</text>
+<text x="40" y="272" fill="#9db3ab" font-size="15">4 more prefix bits, 9 still over the cap</text>
+<text x="40" y="292" fill="#9db3ab" font-size="15">child 9: 16.9 GiB</text>
+<rect x="350" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="372.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">0</text>
+<rect x="400" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="422.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">1</text>
+<rect x="450" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="472.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">2</text>
+<rect x="500" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="522.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">3</text>
+<rect x="550" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="572.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">4</text>
+<rect x="600" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="622.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">5</text>
+<rect x="650" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="672.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">6</text>
+<rect x="700" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="722.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">7</text>
+<rect x="750" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="772.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">8</text>
+<rect x="800" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="822.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">9</text>
+<rect x="850" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="872.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">10</text>
+<rect x="900" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="922.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">11</text>
+<rect x="950" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="972.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">12</text>
+<rect x="1000" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="1022.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">13</text>
+<rect x="1050" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1072.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">14</text>
+<rect x="1100" y="230" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1122.0" y="257.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">15</text>
+<path d="M822.0,274 L372.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L422.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L472.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L522.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L572.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L622.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L672.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L722.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L772.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L822.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L872.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L922.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L972.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L1022.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L1072.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M822.0,274 L1122.0,380" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<text x="40" y="398" fill="#e8efec" font-size="18">shard42_9 → 16 children</text>
+<text x="40" y="422" fill="#9db3ab" font-size="15">1 still over the cap</text>
+<text x="40" y="442" fill="#9db3ab" font-size="15">child 4: 4.0 GiB</text>
+<rect x="350" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="372.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">0</text>
+<rect x="400" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="422.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">1</text>
+<rect x="450" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="472.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">2</text>
+<rect x="500" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="522.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">3</text>
+<rect x="550" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#e58468" stroke-width="2"/>
+<text x="572.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">4</text>
+<rect x="600" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="622.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">5</text>
+<rect x="650" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="672.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">6</text>
+<rect x="700" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="722.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">7</text>
+<rect x="750" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="772.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">8</text>
+<rect x="800" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="822.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">9</text>
+<rect x="850" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="872.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">10</text>
+<rect x="900" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="922.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">11</text>
+<rect x="950" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="972.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">12</text>
+<rect x="1000" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1022.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">13</text>
+<rect x="1050" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1072.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">14</text>
+<rect x="1100" y="380" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1122.0" y="407.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">15</text>
+<path d="M572.0,424 L372.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L422.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L472.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L522.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L572.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L622.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L672.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L722.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L772.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L822.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L872.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L922.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L972.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L1022.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L1072.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<path d="M572.0,424 L1122.0,530" stroke="#3a4a43" stroke-width="1.2" fill="none"/>
+<text x="40" y="548" fill="#e8efec" font-size="18">shard42_9_4 → 16 children</text>
+<text x="40" y="572" fill="#9db3ab" font-size="15">all under the cap, 3 levels deep</text>
+<rect x="350" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="372.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">0</text>
+<rect x="400" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="422.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">1</text>
+<rect x="450" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="472.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">2</text>
+<rect x="500" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="522.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">3</text>
+<rect x="550" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="572.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">4</text>
+<rect x="600" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="622.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">5</text>
+<rect x="650" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="672.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">6</text>
+<rect x="700" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="722.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">7</text>
+<rect x="750" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="772.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">8</text>
+<rect x="800" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="822.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">9</text>
+<rect x="850" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="872.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">10</text>
+<rect x="900" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="922.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">11</text>
+<rect x="950" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="972.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">12</text>
+<rect x="1000" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1022.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">13</text>
+<rect x="1050" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1072.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">14</text>
+<rect x="1100" y="530" width="44" height="44" rx="6" fill="#1c2822" stroke="#3ecfa2" stroke-width="2"/>
+<text x="1122.0" y="557.0" text-anchor="middle" fill="#e8efec" font-size="13" font-family="'JetBrains Mono', monospace">15</text>
+<text x="1164" y="260" fill="#9db3ab" font-size="15">the other 8 over-cap</text>
+<text x="1164" y="280" fill="#9db3ab" font-size="15">children split the same way</text>
+<rect x="40" y="610" width="1420" height="120" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="60" y="645" fill="#e8efec" font-size="17">Whole build: 795 split operations, 16,081 leaves from 256 shards. The largest shard (shard82, 198 GiB) ends up at ≤3.7 GiB per leaf.</text>
+<text x="60" y="675" fill="#9db3ab" font-size="17">Splits only refine sorted order, so the leaves stay globally sorted and assembly concatenates them as before.</text>
+<text x="60" y="705" fill="#9db3ab" font-size="17">Reshard stage 15 h 43 min. Assembly then peaked at ~940 GB of an 1,800 GB budget, where four earlier runs had OOM-crashed.</text>
+</svg>

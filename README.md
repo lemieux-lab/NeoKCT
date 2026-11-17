@@ -24,7 +24,7 @@ In practice this holds real cohorts. The current production table is a double-st
 
 On a same-alphabet benchmark (200 GTEx samples, DNA 31-mers, Jellyfish counts as ground truth), NeoKCT returned the exact count for 98.12% of queried k-mers, against 9.82% for REINDEER.
 
-![](Figures/Project_Figures_1.svg)
+![](Figures/motivation.svg)
  
 ---
  
@@ -85,7 +85,11 @@ Peak memory stays flat in the number of samples through counting, scattering, an
 
 The resulting table is read-only: `push!`, `collapse!`, `sort!` and `repack` all raise an error on it. Add more samples by re-running `build_kct_streaming` over the full sample list (it resumes) or by seeding it from an existing table with the `seeds` keyword. To correct a single sample's counts in an already-assembled table, `patch_sample_counts` rewrites it in one streaming pass into a new file.
 
-<img src="Figures/Project_Figures_2.svg" style="background-color: white; padding: 8px;">
+![](Figures/build_pipeline.svg)
+
+Once built, the table is a sorted list of amino-acid (or DNA) k-mers, each with its own per-sample counts:
+
+<img src="Figures/kct_overview.svg" style="background-color: white; padding: 8px;">
  
 ---
  
@@ -93,13 +97,15 @@ The resulting table is read-only: `push!`, `collapse!`, `sort!` and `repack` all
  
 - **Block-compressed sparse-count posting lists** (`CountsLayer`, in `KCTLayers.jl`): the representation `build_kct_streaming` produces, and the only counts representation this project uses. Each k-mer keeps its own list of the samples where it was seen, as `(sample, count)` pairs, and absent samples are never stored. Sample indices within a list are gap-coded against the previous entry. K-mers are grouped into fixed blocks of 64, and each block picks a single bit width for its row lengths, its sample gaps, and its counts (the minimum that fits that block), with a short per-block exception list for counts that do not fit 16 bits. There is deliberately no cross-k-mer deduplication. Measurement on real RNA-seq showed the rows holding almost all of the pairs are effectively unique, so a shared pool plus a per-k-mer pointer cost about what it saved and needed a multi-terabyte build-time dictionary to maintain. A `block_ptr` offset array gives random access to any k-mer's block without a scan.
 
-  ![](Figures/Project_Figures_4.svg)
+  ![](Figures/countslayer_block_format.svg)
 - **Memory-mapped loading**: `load_kct` memory-maps the packed blob by default, so resident memory is the k-mer index plus whatever blocks a query has touched. On the GTEx table that is about 265 GB resident for a 2.15 TiB file. The first touch of a block pays a disk read (around 17 ms on the lab's NFS mount, against ~61 µs once cached), but a real peptide query touches sorted, adjacent k-mers, so most reads land on pages already cached. `load_kct(path; in_memory=true)` reads the whole blob into RAM instead, which avoids cold reads for heavy random access when the blob fits in memory.
+
+  ![](Figures/mmap_access.svg)
 - **Delta-encoded k-mer sequences** (`DeltaArray`): sorted k-mer bit-patterns stored as delta-encoded integers (UInt64 values, UInt32 deltas by default), roughly halving sequence storage. Periodic checkpoints bound random access to O(checkpoint interval), and sequential iteration is O(1) amortized. Overflow deltas are transparently promoted to checkpoints. Both the checkpoint type `C` and delta type `D` are type parameters, allowing compact alternatives for small tables.
 
   `DeltaArray` is provided by the [`NArrays`](https://github.com/lemieux-lab/NArrays) package (originally developed for this project).
 
-  ![](Figures/Project_Figures_5.svg)
+  ![](Figures/delta_array.svg)
 - **Layered architecture**: a `KCT{K, Ab, Counts, Biotype, C, D}` is a wrapper combining up to three independent layers. `KmerLayer` holds the sorted k-mer sequences and prefix index. `CountsLayer` holds the count table. `BiotypLayer` holds the deduplicated biotype bitmask pool. Layers can be added or omitted independently, folding the old `NeoKCT`, `RichKCT`, and `GenomicIndex` types into one. Cross-layer operations (`add_biotypes`, `setdiff`) are defined at the `KCT` level on top of a single O(n+m) sorted merge walk.
 - **Prefix-indexed search**: an index keyed on the leading k-mer symbols (5 by default for amino acids) partitions the sorted k-mer list into buckets, so a lookup jumps straight to the right bucket. Within each bucket, `DeltaArray.searchfirst` does an in-order scan without full decode.
 - **Peptide queries** (`PeptideQuery.jl`): `peptide_counts(kct, pep)` returns a peptide's per-sample abundance against an amino-acid table. A peptide shorter than K sums its whole prefix range of k-mers (adjacent in sorted order, decoding each touched block once), a peptide of exactly K is its own row, and a longer peptide takes the elementwise minimum over its overlapping K-mer tiles. `il_ambiguous=true` sums over every isoleucine/leucine variant, since the two are isobaric. `peptide_matrix` runs a whole peptide set across threads. Two documented blind spots: a peptide at the very C-terminus of its ORF returns zero for lengths below K (no stop-free extension), and matching is exact, as in BamQuery.
@@ -107,7 +113,13 @@ The resulting table is read-only: `push!`, `collapse!`, `sort!` and `repack` all
 - **Parallel k-merization**: a rolling 2-bit k-mer counter reads a chunk of sequence with no per-k-mer allocation (`count_kmers`), and `chunk_stream` fans chunks out to worker tasks behind a bounded semaphore so an unbounded backlog can't build up. `jello_superthreaded_hash` merges the per-chunk tables in parallel.
 - **DNA k-mers by default, amino acid translation optional**: `JelloFish.jl`'s counter reads raw nucleotide k-mers. Passing `translate=true` folds each in-frame codon to a 5-bit amino acid symbol as it goes (`K` nucleotides become `K÷3` amino acids), for peptide-level queries. `build_kct_streaming` honors the same flag.
 - **Double-strand counting**: `double_strand=true` also counts each read's reverse complement into the same table. Without it, a read only counts when it happens to match the coding strand, which on an unstranded library (GTEx, for one) drops about half the real signal. It has to happen at counting time, because once reads are folded to amino-acid k-mers the reverse strand can't be recovered. `build_kct_streaming` honors the flag. The default stays `false` so older builds reproduce exactly.
+
+  ![](Figures/double_strand_counting.svg)
 - **Disk-backed streaming build** (`build_kct_streaming`, `StreamBuild.jl`): an external k-way merge sort (Knuth-style). Samples are counted in waves and scattered into k-mer-prefix-sharded record files on local scratch disk, each wave is folded into a sorted partial table, and partials are combined by a hierarchical merge that runs interleaved with the wave loop, firing every `merge_fanin` waves and deleting its inputs as it completes, so live partials on disk stay bounded instead of growing with the cohort. An adaptive prefix-tree reshard then splits any shard whose size across the merge roots exceeds `reshard_leaf_bytes` (default 4 GB) by `reshard_extra_bits` more prefix bits, recursively, leaving small shards untouched. On the GTEx build that split 73 of 256 shards into 16,081 leaves and capped the largest from 198 GiB to under 3.7 GiB. The final assembly transcodes the leaves directly into block-compressed posting lists with no dedup dictionary, streaming the packed output to disk rather than buffering the whole table in RAM. Each sample's count is retried (`count_attempts`) if it throws, which covers transient samtools / FIFO / NFS failures without failing the whole run. Every stage marks itself done, so `resume = true` (the default) picks a killed build back up without redoing finished work.
+
+  ![](Figures/merge_logic.svg)
+
+  ![](Figures/prefix_tree_reshard.svg)
 - **Single-sample patching** (`patch_sample_counts`): replaces one sample's contribution in an assembled table with a corrected recount, in one streaming pass that decodes and re-encodes each block once. It updates rows where both have the k-mer, adds rows only the recount has, scrubs the old count where only the table has it, and writes a new file without touching the input. Built after a transient glitch undercounted one GTEx sample, where a full rebuild would have taken around 10 days.
 - **Biotype annotation layer** (`BiotypLayer`): one or more Ensembl transcript FASTAs and a GTF or GFF3 annotation are k-merized into a `KCT{Nothing, BiotypLayer}`, a sorted table of amino-acid k-mers, each tagged with a bitmask whose bits flag which transcript biotypes (protein-coding, lncRNA, and so on) cover that k-mer. Multiple biotypes for the same k-mer are OR-accumulated. An optional proteome FASTA (`proteome_path`) adds an `in_frame_cds` bit marking k-mers from annotated proteins, which separates canonical in-frame k-mers from out-of-frame ones without parsing CDS coordinates. Calling `add_biotypes(kct, gidx)` performs an O(n+m) sorted merge walk and returns a `KCT{CountsLayer, BiotypLayer}`, which exposes `counts + biotype_mask` per k-mer. K-mers absent from the reference receive an intergenic mask.
 - **Tumor-vs-normal anti-join**: `setdiff(tumor, normal; pred)` walks two count tables in one sorted pass and returns the tumor k-mers that satisfy `pred(tumor_row, normal_row)`, where `normal_row` is `nothing` for a k-mer never seen in the normal table. The default predicate is plain set difference. A count-aware predicate gives exact-count k-mer arithmetic in the style of Laumont et al. (2018).
