@@ -89,7 +89,7 @@ The resulting table is read-only: `push!`, `collapse!`, `sort!` and `repack` all
 
 Once built, the table is a sorted list of amino-acid (or DNA) k-mers, each with its own per-sample counts:
 
-<img src="Figures/kct_overview.svg" style="background-color: white; padding: 8px;">
+![](Figures/kct_overview.svg)
  
 ---
  

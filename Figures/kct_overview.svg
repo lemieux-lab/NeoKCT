@@ -1,386 +1,94 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg width="100%" height="100%" viewBox="0 0 900 560" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;">
-    <g transform="matrix(1,0,0,1,450,280)">
-        <g transform="matrix(1,0,0,1,-450,-245)">
-            <g transform="matrix(0.615268,0,0,1.09036,490.238,37.7105)">
-                <path d="M576,24.42L576,129.58C576,133.123 570.902,136 564.623,136L429.377,136C423.098,136 418,133.123 418,129.58L418,24.42C418,20.877 423.098,18 429.377,18L564.623,18C570.902,18 576,20.877 576,24.42Z" style="fill:rgb(232,238,255);stroke:rgb(204,213,238);stroke-width:1.5px;"/>
-            </g>
-            <g id="step1-rnaseq">
-                <g transform="matrix(1,0,0,1,55.5599,0)">
-                    <path d="M168,25L168,129C168,132.863 164.863,136 161,136L17,136C13.137,136 10,132.863 10,129L10,25C10,21.137 13.137,18 17,18L161,18C164.863,18 168,21.137 168,25Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1.5px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,144.51,38)">
-                    <text x="-41.996px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(119,136,170);">R<tspan x="-34.675px -27.353px -20.583px -17.153px -10.383px -3.613px 4.265px 7.143px 14.465px 21.235px 28.005px 35.327px " y="0px 0px 0px 0px 0px 0px 0px 0px 0px 0px 0px 0px ">NA-SEQ READS</tspan></text>
-                </g>
-                <g transform="matrix(1,0,0,1,55.5599,0)">
-                    <path d="M158,50L158,56C158,57.104 157.104,58 156,58L22,58C20.896,58 20,57.104 20,56L20,50C20,48.896 20.896,48 22,48L156,48C157.104,48 158,48.896 158,50Z" style="fill:rgb(138,180,232);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,55.5599,0)">
-                    <path d="M140,65L140,71C140,72.104 139.104,73 138,73L22,73C20.896,73 20,72.104 20,71L20,65C20,63.896 20.896,63 22,63L138,63C139.104,63 140,63.896 140,65Z" style="fill:rgb(168,208,168);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,55.5599,0)">
-                    <path d="M148,80L148,86C148,87.104 147.104,88 146,88L22,88C20.896,88 20,87.104 20,86L20,80C20,78.896 20.896,78 22,78L146,78C147.104,78 148,78.896 148,80Z" style="fill:rgb(245,192,138);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,55.5599,0)">
-                    <path d="M126,95L126,101C126,102.104 125.104,103 124,103L22,103C20.896,103 20,102.104 20,101L20,95C20,93.896 20.896,93 22,93L124,93C125.104,93 126,93.896 126,95Z" style="fill:rgb(201,168,232);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,144.56,124)">
-                    <g transform="matrix(9,0,0,9,18.0154,0)">
-                    </g>
-                    <g transform="matrix(9,0,0,9,20.5159,0)">
-                    </g>
-                    <text x="-35.018px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,187,204);">no reference ﬁlter</text>
-                </g>
-            </g>
-            <g id="arrow-kmerize">
-                <g transform="matrix(1,0,0,1,255.576,67)">
-                    <text x="-18.209px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(85,85,85);">k-merize</text>
-                </g>
-                <g transform="matrix(1,0,0,1,255.576,87.6055)">
-                    <text x="-15.381px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,170,170);">(k = 30)</text>
-                </g>
-            </g>
-            <g id="step2-dna-kmers">
-                <g transform="matrix(0.859638,0,0,1,103.866,0)">
-                    <path d="M372,25L372,129C372,132.863 368.351,136 363.857,136L222.143,136C217.649,136 214,132.863 214,129L214,25C214,21.137 217.649,18 222.143,18L363.857,18C368.351,18 372,21.137 372,25Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1.5px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,366.779,38)">
-                    <text x="-31.566px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(119,136,170);">D<tspan x="-24.244px -16.922px -10.704px -7.826px -1.056px 2.374px 10.804px 17.574px " y="0px 0px 0px 0px 0px 0px 0px 0px ">NA K-MER</tspan>S</text>
-                </g>
-                <g transform="matrix(1,0,0,1,297.829,60)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(68,68,102);">ACGTACCGTTAGCAGTC...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,297.829,76)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(68,68,102);">CGTACCGTTAGCAGTCG...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,297.829,92)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(68,68,102);">GTACCGTTAGCAGTCGA...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,297.829,108)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(68,68,102);">TACCGTTAGCAGTCGAC...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,366.829,124)">
-                    <g transform="matrix(9,0,0,9,-49.0298,0)">
-                    </g>
-                    <g transform="matrix(9,0,0,9,-46.5293,0)">
-                    </g>
-                    <text x="-49.03px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,187,204);">ﬁxed length, all positions</text>
-                </g>
-            </g>
-            <g id="arrow-translate">
-                <g transform="matrix(1,0,0,1,462.106,70.1101)">
-                    <text x="-18.218px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(85,85,85);">translate</text>
-                </g>
-                <g transform="matrix(1,0,0,1,462.106,87.6055)">
-                    <text x="-23.509px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,170,170);">AA<tspan x="-11.999px -9.499px " y="0px 0px "> 1</tspan>0-mers</text>
-                </g>
-            </g>
-            <g id="step3-aa-kmers">
-                <g transform="matrix(1,0,0,1,82.2007,0)">
-                    <path d="M576,25L576,129C576,132.863 572.863,136 569,136L425,136C421.137,136 418,132.863 418,129L418,25C418,21.137 421.137,18 425,18L569,18C572.863,18 576,21.137 576,25Z" style="fill:rgb(244,248,255);stroke:rgb(170,187,204);stroke-width:1.5px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,579.151,38)">
-                    <text x="-27.629px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(119,136,170);">AA<tspan x="-14.641px -11.763px -4.993px -1.563px 6.867px 13.637px " y="0px 0px 0px 0px 0px 0px "> K-MER</tspan>S</text>
-                </g>
-                <g transform="matrix(1,0,0,1,510.201,60)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(85,68,68);">M A G L K V T S A P...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,510.201,76)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(85,68,68);">S T V P Q F L N G K...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,510.201,92)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(85,68,68);">K T V A E Q L S M G...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,510.201,108)">
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:9.5px;fill:rgb(85,68,68);">V A E Q L S M G K T...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,579.201,124)">
-                    <text x="-52.02px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,187,204);">directly comparable to MS</text>
-                </g>
-            </g>
-            <g id="arrow-count">
-                <g transform="matrix(1,0,0,1,703.012,64)">
-                    <text x="-19.805px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(85,85,85);">count per</text>
-                </g>
-                <g transform="matrix(1,0,0,1,703.012,91)">
-                    <text x="-14.506px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9px;fill:rgb(170,170,170);">sample</text>
-                </g>
-            </g>
-            <g id="kct-label">
-                <g transform="matrix(1,0,0,1,795.867,73.0352)">
-                    <text x="-14.386px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:14px;fill:rgb(34,68,170);">KCT</text>
-                </g>
-                <g transform="matrix(1,0,0,1,795.867,91.0352)">
-                    <text x="-41.594px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,136,204);">K-mer Count <tspan x="17.688px 22.688px 28.25px " y="0px 0px 0px ">Tab</tspan>le</text>
-                </g>
-            </g>
-            <g id="kct-table">
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="156" width="880" height="30" style="fill:rgb(232,238,255);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,72.7126,176)">
-                    <text x="0px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">AA<tspan x="15.479px 18.536px " y="0px 0px "> k</tspan>-mer</text>
-                </g>
-                <g transform="matrix(1,0,0,1,204.779,176)">
-                    <text x="-23.542px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">sample 1</text>
-                </g>
-                <g transform="matrix(1,0,0,1,286.779,176)">
-                    <text x="-23.542px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">sample 2</text>
-                </g>
-                <g transform="matrix(1,0,0,1,368.779,176)">
-                    <text x="-23.542px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">sample 3</text>
-                </g>
-                <g transform="matrix(1,0,0,1,450.779,176)">
-                    <text x="-23.542px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">sample 4</text>
-                </g>
-                <g transform="matrix(1,0,0,1,532.779,176)">
-                    <text x="-23.542px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">sample 5</text>
-                </g>
-                <g transform="matrix(1,0,0,1,624.779,176)">
-                    <text x="-5.001px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:12px;fill:rgb(136,153,204);">...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,750.779,176)">
-                    <text x="-24.455px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(68,102,187);">sample N</text>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M210,156L210,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M292,156L292,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M374,156L374,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M456,156L456,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M538,156L538,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M620,156L620,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M726,156L726,354" style="fill:none;fill-rule:nonzero;stroke:rgb(221,238,255);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="186" width="880" height="28" style="fill:rgb(248,248,248);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,204.779,204)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,286.779,204)">
-                    <text x="-6.118px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">12</text>
-                </g>
-                <g transform="matrix(1,0,0,1,368.779,204)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">7</text>
-                </g>
-                <g transform="matrix(1,0,0,1,450.779,204)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,532.779,204)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">5</text>
-                </g>
-                <g transform="matrix(1,0,0,1,624.779,204)">
-                    <text x="-4.584px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(170,170,170);">...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,750.779,204)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">3</text>
-                </g>
-                <g transform="matrix(1,0,0,1,842.779,204)">
-                    <text x="-40.855px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(170,170,170);">canonical ●</text>
-                </g>
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="214" width="880" height="28" style="fill:rgb(255,248,240);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,204.779,232)">
-                    <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(192,112,48);">5</text>
-                </g>
-                <g transform="matrix(1,0,0,1,286.779,232)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,368.779,232)">
-                    <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(192,112,48);">8</text>
-                </g>
-                <g transform="matrix(1,0,0,1,450.779,232)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,532.779,232)">
-                    <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(192,112,48);">2</text>
-                </g>
-                <g transform="matrix(1,0,0,1,624.779,232)">
-                    <text x="-4.584px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(170,170,170);">...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,750.779,232)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,842.779,232)">
-                    <text x="-56.836px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(208,120,48);">non-canonical</text>
-                    <text x="-4.801px" y="0px" style="font-family:'MicrosoftYaHei', 'Microsoft YaHei', sans-serif;font-size:8px;fill:rgb(208,120,48);">◆</text>
-                </g>
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="242" width="880" height="28" style="fill:rgb(248,248,248);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,72.7126,202.356)">
-                    <g transform="matrix(10,0,0,10,54.9805,0)">
-                    </g>
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(85,85,85);">KTVAEQLSMG</text>
-                </g>
-                <g transform="matrix(1,0,0,1,204.779,260)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">3</text>
-                </g>
-                <g transform="matrix(1,0,0,1,286.779,260)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">3</text>
-                </g>
-                <g transform="matrix(1,0,0,1,368.779,260)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,450.779,260)">
-                    <text x="-5.709px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">1<tspan x="-0.408px " y="0px ">1</tspan></text>
-                </g>
-                <g transform="matrix(1,0,0,1,532.779,260)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">1</text>
-                </g>
-                <g transform="matrix(1,0,0,1,624.779,260)">
-                    <text x="-4.584px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(170,170,170);">...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,750.779,260)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">6</text>
-                </g>
-                <g transform="matrix(1,0,0,1,842.779,260)">
-                    <text x="-40.855px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(170,170,170);">canonical ●</text>
-                </g>
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="270" width="880" height="28" style="fill:rgb(255,248,240);"/>
-                </g>
-                <g transform="matrix(1,0,0,1,72.7126,288)">
-                    <g transform="matrix(10,0,0,10,54.9805,0)">
-                    </g>
-                    <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(154,90,8);">VAEQLSMGKT</text>
-                </g>
-                <g transform="matrix(1,0,0,1,204.779,288)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,286.779,288)">
-                    <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(192,112,48);">4</text>
-                </g>
-                <g transform="matrix(1,0,0,1,368.779,288)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,450.779,288)">
-                    <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(192,112,48);">9</text>
-                </g>
-                <g transform="matrix(1,0,0,1,532.779,288)">
-                    <text x="-3.059px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(68,68,68);">0</text>
-                </g>
-                <g transform="matrix(1,0,0,1,624.779,288)">
-                    <text x="-4.584px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:11px;fill:rgb(170,170,170);">...</text>
-                </g>
-                <g transform="matrix(1,0,0,1,750.779,288)">
-                    <text x="-3.059px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(192,112,48);">7</text>
-                </g>
-                <g transform="matrix(1,0,0,1,842.779,288)">
-                    <text x="-56.836px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:8px;fill:rgb(208,120,48);">non-canonical</text>
-                    <text x="-4.801px" y="0px" style="font-family:'MicrosoftYaHei', 'Microsoft YaHei', sans-serif;font-size:8px;fill:rgb(208,120,48);">◆</text>
-                </g>
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="298" width="880" height="24" style="fill:white;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,100.054,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(1,0,0,1,204.779,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(1,0,0,1,286.779,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(1,0,0,1,368.925,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(1,0,0,1,450.845,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(1,0,0,1,533.218,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(1,0,0,1,750.779,314)">
-                    <text x="-3.25px" y="0px" style="font-family:'MS-UIGothic', 'MS UI Gothic', sans-serif;font-size:13px;fill:rgb(204,204,204);">⋮</text>
-                </g>
-                <g transform="matrix(0.897459,0,0,1,56.0408,0)">
-                    <rect x="10" y="156" width="880" height="166" style="fill:none;stroke:rgb(204,213,238);stroke-width:1px;"/>
-                </g>
-            </g>
-            <g id="scale-annotation">
-                <g transform="matrix(1,0,0,1,64.8885,346)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;stroke:black;stroke-opacity:0;stroke-width:1px;stroke-linejoin:round;stroke-miterlimit:2;">rows: billions of <tspan x="70.586px 77.256px 83.374px 86.152px " y="0px 0px 0px 0px ">AA k</tspan>-mers</text>
-                </g>
-                <g transform="matrix(1,0,0,1,64.8885,361)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;stroke:black;stroke-opacity:0;stroke-width:1px;stroke-linejoin:round;stroke-miterlimit:2;">columns: N samples (e.g. 2,486 GTEx)</text>
-                </g>
-                <g transform="matrix(1,0,0,1,64.8885,376)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;stroke:black;stroke-opacity:0;stroke-width:1px;stroke-linejoin:round;stroke-miterlimit:2;">values: k-mer sequence → abundance values for each sample</text>
-                </g>
-            </g>
-            <g transform="matrix(1,0,0,1,72.7126,258.356)">
-                <g transform="matrix(10,0,0,10,54.9805,0)">
-                </g>
-                <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(85,85,85);">STVPQFLNGK</text>
-            </g>
-            <g id="optimisations">
-                <g transform="matrix(1,0,0,1,-35.221,0)">
-                    <path d="M890,339L890,463C890,466.863 886.863,470 883,470L487,470C483.137,470 480,466.863 480,463L480,339C480,335.137 483.137,332 487,332L883,332C886.863,332 890,335.137 890,339Z" style="fill:rgb(245,240,255);stroke:rgb(153,119,204);stroke-width:1px;"/>
-                </g>
-                <g transform="matrix(1,0,0,1,649.779,352)">
-                    <text x="-36.671px" y="0px" style="font-family:'Arial-BoldMT', 'Arial', sans-serif;font-weight:700;font-size:11px;fill:rgb(102,68,170);">Optimisations</text>
-                </g>
-                <g transform="matrix(1,0,0,1,454.779,373)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,68,170);">●  Delta-encoded sorted k-mer lists</text>
-                </g>
-                <g transform="matrix(1,0,0,1,468.779,389)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(153,119,204);">Exploits lexicographic redundancy between adjacent k-mers</text>
-                </g>
-                <g transform="matrix(1,0,0,1,454.779,410)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,68,170);">●  Sparse posting lists, bit-packed blocks</text>
-                </g>
-                <g transform="matrix(1,0,0,1,468.779,426)">
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(153,119,204);">Only present samples stored, 64 k-mers per block, memory-mapped</text>
-                </g>
-                <g transform="matrix(1,0,0,1,454.779,447)">
-                    <g transform="matrix(10,0,0,10,82.749,0)">
-                    </g>
-                    <g transform="matrix(10,0,0,10,85.5273,0)">
-                    </g>
-                    <g transform="matrix(10,0,0,10,158.335,0)">
-                    </g>
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:10px;fill:rgb(102,68,170);">●  Prefix-indexed search</text>
-                </g>
-                <g transform="matrix(1,0,0,1,468.779,463)">
-                    <g transform="matrix(9.5,0,0,9.5,262.447,0)">
-                    </g>
-                    <g transform="matrix(9.5,0,0,9.5,265.086,0)">
-                    </g>
-                    <text x="0px" y="0px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:9.5px;fill:rgb(153,119,204);">A lookup jumps to its prefix bucket, then scans only within it</text>
-                </g>
-                <g transform="matrix(0.813754,0,0,1,86.0922,0)">
-                    <path d="M168.93,75.548L247.909,75.548" style="fill:none;stroke:black;stroke-width:1.52px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
-                </g>
-                <g transform="matrix(0.713336,0,0,1,149.479,0)">
-                    <path d="M384.353,75.548L491.665,75.548" style="fill:none;stroke:black;stroke-width:1.59px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
-                </g>
-                <g transform="matrix(0.668772,0,0,1,224.165,0)">
-                    <path d="M649.665,75.548L783.104,75.548" style="fill:none;stroke:black;stroke-width:1.63px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
-                </g>
-            </g>
-            <g transform="matrix(1,0,0,1,72.7126,230.356)">
-                <g transform="matrix(10,0,0,10,54.9805,0)">
-                </g>
-                <text x="0px" y="0px" style="font-family:'Consolas', monospace;font-size:10px;fill:rgb(154,90,8);">MAGLKVTSAP</text>
-            </g>
-            <g transform="matrix(0.606674,0,0,0.574161,494.584,89.7441)">
-                <path d="M576,30.192L576,123.808C576,130.537 570.83,136 564.462,136L429.538,136C423.17,136 418,130.537 418,123.808L418,30.192C418,23.463 423.17,18 429.538,18L564.462,18C570.83,18 576,23.463 576,30.192Z" style="fill:rgb(232,238,255);stroke:rgb(170,187,204);stroke-opacity:0;stroke-width:1.5px;"/>
-            </g>
-        </g>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 780" width="1500" height="780" font-family="'Archivo', sans-serif">
+<rect x="0" y="0" width="1500" height="780" rx="14" fill="#151f1b"/>
+<defs><marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#9db3ab"/></marker><marker id="ag" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#3ecfa2"/></marker><marker id="ar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#e58468"/></marker><marker id="ak" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 Z" fill="#f0b429"/></marker></defs>
+<rect x="30" y="30" width="220" height="200" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="140" y="62" fill="#e8efec" font-size="18" text-anchor="middle" font-weight="700">RNA-seq read</text>
+<text x="48" y="100" fill="#3ecfa2" font-size="14" text-anchor="start" font-family="'JetBrains Mono', monospace">ATGGCTGGTCTGAAAGT</text>
+<text x="48" y="122" fill="#3ecfa2" font-size="14" text-anchor="start" font-family="'JetBrains Mono', monospace">TACCTCTGCTCCGCAG</text>
+<text x="48" y="160" fill="#9db3ab" font-size="15" text-anchor="start">no alignment,</text>
+<text x="48" y="182" fill="#9db3ab" font-size="15" text-anchor="start">no reference filter</text>
+<path d="M250,130 L318,130" stroke="#9db3ab" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<text x="284" y="118" fill="#9db3ab" font-size="13" text-anchor="middle">k-merize</text>
+<text x="284" y="152" fill="#9db3ab" font-size="13" text-anchor="middle">K = 30 nt</text>
+<rect x="320" y="30" width="360" height="200" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="500" y="62" fill="#e8efec" font-size="18" text-anchor="middle" font-weight="700">30-nt windows, one per offset</text>
+<text x="338" y="98" fill="#e8efec" font-size="13" text-anchor="start" font-family="'JetBrains Mono', monospace">+0 ATGGCTGGTCTGAAAGTTACCTCT…</text>
+<text x="338" y="128" fill="#9db3ab" font-size="13" text-anchor="start" font-family="'JetBrains Mono', monospace">+1 TGGCTGGTCTGAAAGTTACCTCTG…</text>
+<text x="338" y="158" fill="#e8efec" font-size="13" text-anchor="start" font-family="'JetBrains Mono', monospace">+2 GGCTGGTCTGAAAGTTACCTCTGC…</text>
+<text x="338" y="188" fill="#e8efec" font-size="13" text-anchor="start" font-family="'JetBrains Mono', monospace">+3 GCTGGTCTGAAAGTTACCTCTGCT…</text>
+<path d="M680,130 L748,130" stroke="#9db3ab" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<text x="714" y="118" fill="#9db3ab" font-size="13" text-anchor="middle">translate</text>
+<text x="714" y="152" fill="#9db3ab" font-size="13" text-anchor="middle">per window</text>
+<rect x="750" y="30" width="310" height="200" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="905" y="62" fill="#e8efec" font-size="18" text-anchor="middle" font-weight="700">Amino-acid 10-mers</text>
+<text x="770" y="98" fill="#3ecfa2" font-size="15" text-anchor="start" font-family="'JetBrains Mono', monospace">MAGLKVTSAP</text>
+<text x="770" y="128" fill="#e58468" font-size="14" text-anchor="start" font-family="'JetBrains Mono', monospace">WLV* stop codon: dropped</text>
+<text x="770" y="158" fill="#3ecfa2" font-size="15" text-anchor="start" font-family="'JetBrains Mono', monospace">GWSESYLCSA</text>
+<text x="770" y="188" fill="#3ecfa2" font-size="15" text-anchor="start" font-family="'JetBrains Mono', monospace">AGLKVTSAPQ</text>
+<text x="770" y="218" fill="#9db3ab" font-size="13" text-anchor="start">double_strand: reverse complement too</text>
+<path d="M1060,130 L1128,130" stroke="#9db3ab" stroke-width="2" fill="none" marker-end="url(#a)"/>
+<text x="1094" y="118" fill="#9db3ab" font-size="13" text-anchor="middle">count per</text>
+<text x="1094" y="152" fill="#9db3ab" font-size="13" text-anchor="middle">sample</text>
+<rect x="1130" y="30" width="340" height="200" rx="10" fill="#1c2822" stroke="#f0b429" stroke-width="2"/>
+<text x="1300" y="70" fill="#f0b429" font-size="26" text-anchor="middle" font-weight="700">KCT</text>
+<text x="1300" y="100" fill="#e8efec" font-size="17" text-anchor="middle">K-mer Count Table</text>
+<text x="1300" y="140" fill="#9db3ab" font-size="15" text-anchor="middle">sorted k-mers</text>
+<text x="1300" y="166" fill="#9db3ab" font-size="15" text-anchor="middle">+ per-sample counts</text>
+<text x="1300" y="192" fill="#9db3ab" font-size="15" text-anchor="middle">+ optional biotype layer</text>
+<rect x="30" y="260" width="1440" height="260" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="50" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">AA k-mer, sorted</text>
+<text x="280" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">sample 1</text>
+<text x="395" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">sample 2</text>
+<text x="510" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">sample 3</text>
+<text x="625" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">sample 4</text>
+<text x="740" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">…</text>
+<text x="815" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">sample N</text>
+<text x="930" y="294" fill="#8fb0e8" font-size="16" text-anchor="start" font-weight="700">biotype layer (optional)</text>
+<text x="50" y="338" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">AGLKVTSAPQ</text>
+<text x="310" y="338" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">3</text>
+<text x="425" y="338" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="540" y="338" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="655" y="338" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">6</text>
+<text x="746" y="338" fill="#9db3ab" font-size="16" text-anchor="start">…</text>
+<text x="845" y="338" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">4</text>
+<text x="930" y="338" fill="#3ecfa2" font-size="15" text-anchor="start">canonical, in-frame CDS</text>
+<text x="50" y="378" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">GWSESYLCSA</text>
+<text x="310" y="378" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="425" y="378" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">2</text>
+<text x="540" y="378" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="655" y="378" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="746" y="378" fill="#9db3ab" font-size="16" text-anchor="start">…</text>
+<text x="845" y="378" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="930" y="378" fill="#e58468" font-size="15" text-anchor="start">non-canonical, out of frame</text>
+<text x="50" y="418" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">KTVAEQLSMG</text>
+<text x="310" y="418" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="425" y="418" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">12</text>
+<text x="540" y="418" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">7</text>
+<text x="655" y="418" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="746" y="418" fill="#9db3ab" font-size="16" text-anchor="start">…</text>
+<text x="845" y="418" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">3</text>
+<text x="930" y="418" fill="#e58468" font-size="15" text-anchor="start">non-canonical, intergenic</text>
+<text x="50" y="458" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">MAGLKVTSAP</text>
+<text x="310" y="458" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">5</text>
+<text x="425" y="458" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="540" y="458" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">8</text>
+<text x="655" y="458" fill="#9db3ab" font-size="20" text-anchor="start">·</text>
+<text x="746" y="458" fill="#9db3ab" font-size="16" text-anchor="start">…</text>
+<text x="845" y="458" fill="#e8efec" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">2</text>
+<text x="930" y="458" fill="#3ecfa2" font-size="15" text-anchor="start">canonical, in-frame CDS</text>
+<text x="50" y="504" fill="#9db3ab" font-size="14" text-anchor="start">· = absent, not stored. Only present (sample, count) pairs are kept, so the empty part of the matrix costs nothing.</text>
+<rect x="30" y="545" width="700" height="205" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="50" y="577" fill="#e8efec" font-size="18" text-anchor="start" font-weight="700">What the logical table holds</text>
+<text x="50" y="609" fill="#9db3ab" font-size="15" text-anchor="start">rows: every distinct k-mer in the cohort (62.6 billion on GTEx)</text>
+<text x="50" y="637" fill="#9db3ab" font-size="15" text-anchor="start">columns: samples (2,486 on GTEx)</text>
+<text x="50" y="665" fill="#9db3ab" font-size="15" text-anchor="start">one row as stored, a sparse posting list:</text>
+<text x="50" y="706" fill="#3ecfa2" font-size="16" text-anchor="start" font-family="'JetBrains Mono', monospace">MAGLKVTSAP → (s1, 5) (s3, 8) (sN, 2)</text>
+<rect x="760" y="545" width="710" height="205" rx="10" fill="#1c2822" stroke="#2a3a33" stroke-width="1.5"/>
+<text x="780" y="577" fill="#e8efec" font-size="18" text-anchor="start" font-weight="700">How it stays small and fast</text>
+<text x="780" y="612" fill="#e8efec" font-size="16" text-anchor="start">Delta-encoded sorted k-mers</text>
+<text x="780" y="632" fill="#9db3ab" font-size="14" text-anchor="start">UInt64 checkpoints + UInt32 deltas, about half the storage</text>
+<text x="780" y="658" fill="#e8efec" font-size="16" text-anchor="start">Sparse posting lists, bit-packed</text>
+<text x="780" y="678" fill="#9db3ab" font-size="14" text-anchor="start">64 k-mers per block, memory-mapped on load</text>
+<text x="780" y="704" fill="#e8efec" font-size="16" text-anchor="start">Prefix-indexed lookup</text>
+<text x="780" y="724" fill="#9db3ab" font-size="14" text-anchor="start">jump to the prefix bucket, scan only within it</text>
 </svg>
