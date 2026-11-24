@@ -606,10 +606,16 @@ _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
     # I/L pair at the same position, same counts pattern as K1/K2 in shape but distinct rows.
     K8 = "MLAAAA"; K9 = "MIAAAA"
 
-    peps = [K1, K2, K3, K4, K5, K6, K7, K8, K9]
+    # Suffix-anchoring fixtures, each in its own first-residue bucket so none of the prefix
+    # sums below move. "QQQQ" only ever appears at the end of a k-mer (the C-terminal case),
+    # "PPMAAA" puts "MAAA" at an end too, so "MAAA" has both a prefix and a suffix hit.
+    K10 = "DEQQQQ"; K11 = "EHQQQQ"; K12 = "PPMAAA"
+
+    peps = [K1, K2, K3, K4, K5, K6, K7, K8, K9, K10, K11, K12]
     counts = Dict(
       K1 => (3, 0, 5), K2 => (2, 4, 0), K3 => (1, 1, 1), K4 => (0, 2, 3),
       K5 => (7, 0, 0), K6 => (0, 6, 0), K7 => (4, 4, 4), K8 => (2, 3, 1), K9 => (5, 0, 2),
+      K10 => (1, 2, 0), K11 => (0, 1, 3), K12 => (0, 9, 0),
     )
     codes = Dict(p => _aa_code(p) for p in peps)
     S = [Dict{UInt64, UInt32}(codes[p] => counts[p][s] for p in peps if counts[p][s] != 0) for s in 1:3]
@@ -653,10 +659,25 @@ _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
       @test peptide_counts(kct, "MAAAAAG") == min.(UInt32[3, 0, 5], UInt32[4, 4, 4])
     end
 
-    @testset "C-terminal blind spot: absent prefix returns zero, not an error" begin
-      # No k-mer in this table starts with residue "G"; documents the blind spot rather
-      # than fixing it (PAPER_TODO.md task A5).
+    @testset "absent peptide returns zero, not an error" begin
+      # No k-mer starts with "G", and K - 1 = 5 > _MAX_SUFFIX_PAD so suffix anchoring is
+      # skipped rather than enumerating 20^5 lookups.
       @test peptide_counts(kct, "G") == UInt32[0, 0, 0]
+    end
+
+    @testset "suffix anchoring: C-terminal peptides (PAPER_TODO.md A5)" begin
+      # Only at the end of k-mers: the prefix query is blind, suffix sums K10 + K11.
+      @test peptide_counts(kct, "QQQQ"; anchor = :prefix) == UInt32[0, 0, 0]
+      @test peptide_counts(kct, "QQQQ") == UInt32[1, 3, 3]
+      # "CCCC" ends K3 ("MC" + CCCC) and K6 ("KC" + CCCC), starts nothing.
+      @test peptide_counts(kct, "CCCC") == UInt32[1, 7, 1]
+      # Both anchors hit: prefix K1 (3, 0, 5), suffix K12 (0, 9, 0), per-sample max.
+      @test peptide_counts(kct, "MAAA"; anchor = :prefix) == UInt32[3, 0, 5]
+      @test peptide_counts(kct, "MAAA") == UInt32[3, 9, 5]
+      # L == K is an exact match either way.
+      @test peptide_counts(kct, K12) == peptide_counts(kct, K12; anchor = :prefix) == UInt32[0, 9, 0]
+      @test_throws ArgumentError peptide_counts(kct, "MAAA"; anchor = :middle)
+      @test peptide_matrix(kct, ["QQQQ", "MAAA"]; anchor = :prefix) == UInt32[0 0 0; 3 0 5]
     end
 
     @testset "il_ambiguous sums every I/L variant" begin
@@ -740,6 +761,248 @@ _expected_cv(samples, x) = UInt32[get(s, x, UInt32(0)) for s in samples]
       idx2 = setdiff(tumor, normal; pred = (trow, nrow) -> trow[1] >= 5 && (isnothing(nrow) || all(iszero, nrow)))
       found2 = sort([tumor.kmer[i].data[1] for i in idx2])
       @test found2 == UInt64[0x30]
+    end
+  end
+
+  @testset "13. Cut-and-pad windows (pad=true)" begin
+    # Reference implementation on purpose naive: BioSequences' own translate per codon,
+    # plain arrays, no bit tricks. The counter has to agree with it key for key.
+    function naive_padded(l::String, kk::Int, min_res::Int)
+        out = Dict{UInt64, UInt32}()
+        n = length(l)
+        for s in 1:(n - 2)
+            res = UInt8[]; stop = false; p = s
+            while length(res) < kk && p + 2 <= n
+                cod = l[p:p + 2]
+                all(c -> c in "ACGT", cod) || break
+                aa = BioSequences.translate(LongDNA{4}(cod))[1]
+                aa == AA_Term && (stop = true; break)
+                push!(res, reinterpret(UInt8, aa))
+                p += 3
+            end
+            length(res) < kk && length(res) < min_res && continue
+            if length(res) < kk
+                push!(res, stop ? 0x1a : 0x1b)
+                while length(res) < kk; push!(res, 0x1b); end
+            end
+            key = foldl((a, c) -> (a << 5) | c, res; init=UInt64(0))
+            out[key] = get(out, key, 0) + 1
+        end
+        return out
+    end
+    count_one(reads, K; min_res=8, double_strand=false) = begin
+      q = Channel{Dict{UInt64, UInt32}}(1)
+      count_kmers(reads, K, q; translate=true, pad=true, min_res=min_res, double_strand=double_strand)
+      take!(q)
+    end
+
+    @testset "matches the naive reference on random reads with stops and Ns" begin
+      rng_reads = String[]
+      seed = UInt64(12345)
+      nextr() = (seed = seed * 6364136223846793005 + 1442695040888963407; seed >> 33)
+      for r in 1:200
+        len = 20 + Int(nextr() % 80)
+        push!(rng_reads, String([nextr() % 50 == 0 ? 'N' : "ACGT"[Int(nextr() % 4) + 1] for _ in 1:len]))
+      end
+      for (kk, mr) in ((12, 8), (10, 8), (4, 2), (12, 12))
+        got = count_one(rng_reads, 3kk; min_res=mr)
+        want = Dict{UInt64, UInt32}()
+        for l in rng_reads; mergewith!(+, want, naive_padded(l, kk, mr)); end
+        @test got == want
+      end
+      # double strand = forward + reverse complement, nothing else
+      got = count_one(rng_reads, 36; double_strand=true)
+      want = Dict{UInt64, UInt32}()
+      for l in rng_reads
+        mergewith!(+, want, naive_padded(l, 12, 8))
+        mergewith!(+, want, naive_padded(String(reverse_complement(LongDNA{4}(l))), 12, 8))
+      end
+      @test got == want
+    end
+
+    @testset "hand-checked windows: stop marker, pad, N cut, min_res" begin
+      # M A W * G, K = 4 residues, min_res 2: frame-0 starts give MAW* and AW*- , W* is too short
+      got = count_one(["ATGGCCTGGTAAGGG"], 12; min_res=2)
+      @test got[_aa_code("MAW") << 5 | 0x1a] == 1
+      @test got[(_aa_code("AW") << 5 | 0x1a) << 5 | 0x1b] == 1
+      @test !haskey(got, (_aa_code("W") << 5 | 0x1a) << 10 | 0x1b << 5 | 0x1b)
+      # an N cuts the window with a pad, not a stop marker, and the read is not skipped
+      got = count_one(["ATGGCCNGGTAAGGG"], 12; min_res=2)
+      @test got[(_aa_code("MA") << 5 | 0x1b) << 5 | 0x1b] == 1
+      # the old whole-read N drop is still what pad=false does
+      q = Channel{Dict{UInt64, UInt32}}(1)
+      count_kmers(["ATGGCCNGGTAAGGG"], 12, q; translate=true)
+      @test isempty(take!(q))
+    end
+
+    @testset "K = 12 residues end to end: prefix counts are exact read occurrences" begin
+      # Peptide placed mid-read, at the very end of a read, and right before a stop codon:
+      # the three cases a plain 12-residue table would miss or undercount.
+      pep = "SIINFEKL"
+      cds = "AGCATTATTAACTTTGAAAAACTG"  # S I I N F E K L
+      flank = "GCTGCAGCAGCAGCTGCAGCAGCAGCAGCAGCTGCA"  # alanines, no stop in frame
+      reads = [flank * cds * flank,            # middle
+               flank * flank * cds,            # read ends right after the peptide
+               flank * cds * "TAA" * flank,    # C-terminal: stop right after
+               cds * "TGA",                    # read is just the peptide + stop
+               flank * flank * flank]          # no peptide
+      truth = 0
+      for r in reads, f in 1:3
+        sub = r[f:end]; sub = sub[1:3 * (length(sub) ÷ 3)]
+        truth += length(findall(pep, String(BioSequences.translate(LongDNA{4}(sub))); overlap=true))
+      end
+      @test truth == 4
+      kct = mktempdir() do tmp; mktempdir() do out
+        fq = joinpath(tmp, "s1.fastq")
+        open(fq, "w") do io
+          for (i, r) in enumerate(reads); println(io, "@r$i\n$r\n+\n$(repeat('I', length(r)))"); end
+        end
+        p = build_kct_streaming([fq]; K = 36, translate = true, pad = true, wave_size = 1,
+                                shard_bits = 2, tmp_dir = tmp, out_dir = out)
+        load_kct(p)
+      end; end
+      @test kct isa KCT{12, AAAlphabet}
+      @test idx_prefix_size(kct.kmer) == 7  # buckets on the first 5 residues, 2^25 of them
+      @test _is_padded(kct)
+      @test peptide_counts(kct, pep) == UInt32[4]
+      @test peptide_counts(kct, pep; anchor = :prefix) == UInt32[4]
+      # 9-, 10-, 11-mers anchored on the same occurrences
+      @test peptide_counts(kct, "SIINFEKA") == UInt32[0]  # not present
+      @test peptide_counts(kct, "ASIINFEKL") == UInt32[3]  # reads 1-3 have a flank alanine before it, read 4 doesn't
+      @test peptide_counts(kct, "AAASIINFEKL") == UInt32[3]
+    end
+
+    @testset "_DeltaBuilder == NArrays' _delta_encode" begin
+      # random sorted codes with every gap regime: tiny, near the UInt32 edge, and overflowing
+      x = UInt64(7); v = UInt64[]
+      seed = UInt64(99)
+      nextr() = (seed = seed * 6364136223846793005 + 1442695040888963407; seed >> 33)
+      for i in 1:5000
+        g = (i % 97 == 0) ? UInt64(typemax(UInt32)) + nextr() % 3 : (i % 53 == 0 ? UInt64(1) << 40 : 1 + nextr() % 1000)
+        x += g; push!(v, x)
+      end
+      for inter in (1, 7, 256)
+        b = _DeltaBuilder(inter); foreach(k -> push!(b, k), v)
+        got = _finish(b); want = DeltaArray{UInt64, UInt32}(v, inter)
+        @test got.checkpoints == want.checkpoints && got.deltas == want.deltas &&
+              got.regular_cp_idx == want.regular_cp_idx && collect(got) == v
+      end
+      b = _DeltaBuilder(256); push!(b, UInt64(5))
+      @test_throws ErrorException push!(b, UInt64(5))
+    end
+
+    @testset "old tables are not mistaken for padded ones" begin
+      # the K = 6 table from testset 12 can't contain pad or stop codes
+      kct = mktempdir() do tmp; mktempdir() do out
+        S = [Dict(_aa_code("MAAAAA") => UInt32(3))]
+        p = build_kct_streaming(["s1"]; K = 18, translate = true, wave_size = 1, shard_bits = 2,
+                                tmp_dir = tmp, out_dir = out, counter = (x -> deepcopy(S[1])))
+        load_kct(p)
+      end; end
+      @test !_is_padded(kct)
+    end
+  end
+
+  @testset "14. Narrow partial shards and in-place blob move" begin
+    ps_eq(a, b) = a.kmers == b.kmers && a.row_id == b.row_id && a.offsets == b.offsets &&
+                  a.pool_s == b.pool_s && a.pool_c == b.pool_c
+    # two k-mers sharing row 1, a third on row 2, counts straddling the 16-bit escape
+    ps = _PartialShard(UInt64[3, 7, 9], UInt32[1, 1, 2], UInt64[1, 4, 6],
+                       UInt32[1, 2, 2486, 5, 65535],
+                       UInt32[1, 0xfffe, 0xffff, 0x10000, typemax(UInt32)])
+    mktempdir() do d
+      p = joinpath(d, "s.bin")
+
+      @testset "narrow round trip, escapes restored" begin
+        _write_partial_shard(p, ps)
+        @test read(p, 8) == reinterpret(UInt8, [_PARTIAL_NARROW_MAGIC])
+        @test ps_eq(_read_partial_shard(p), ps)
+        # 3 counts >= 0xffff -> 3 exception records of 12 bytes
+        @test filesize(p) == 8 + 8 + 3 * 12 + 8 + 3 * 8 + 8 + 5 * 4 + 8 + 3 * 12
+      end
+
+      @testset "empty shard" begin
+        e = _PartialShard(UInt64[], UInt32[], UInt64[1], UInt32[], UInt32[])
+        _write_partial_shard(p, e)
+        @test ps_eq(_read_partial_shard(p), e)
+      end
+
+      @testset "sample slots > 0xffff fall back to the legacy layout" begin
+        w = _PartialShard(UInt64[4], UInt32[1], UInt64[1, 3], UInt32[2, 70_000], UInt32[4, 70_000])
+        _write_partial_shard(p, w)
+        @test read(p, 8) == reinterpret(UInt8, [Int64(1)])
+        @test ps_eq(_read_partial_shard(p), w)
+      end
+
+      @testset "legacy (pre-narrow) files still read" begin
+        open(p, "w") do io
+          write(io, Int64(3)); write(io, ps.kmers); write(io, ps.row_id)
+          write(io, Int64(2)); write(io, ps.offsets)
+          write(io, Int64(5)); write(io, ps.pool_s); write(io, ps.pool_c)
+        end
+        @test ps_eq(_read_partial_shard(p), ps)
+      end
+
+      @testset "disk guard helpers" begin
+        _write_partial_shard(p, ps)
+        @test _partial_sizes(p) == (3, 5)
+        @test _await_disk(d, 0, "noop") === nothing
+        @test _await_disk(d, 1, "tiny") === nothing
+        @test _dir_bytes(d) >= filesize(p)
+      end
+
+      @testset "_move_blob_tail! == plain forward copy" begin
+        for (n, chunk) in ((0, 7), (1, 7), (7, 7), (100, 7), (100, 1000))
+          blob = rand(UInt8, n)
+          t = joinpath(d, "b.tmp"); write(t, blob)
+          o = joinpath(d, "o.bin")
+          open(o, "w") do io
+            write(io, b"HEAD")
+            _move_blob_tail!(io, t, n; chunk = chunk)
+            write(io, b"TAIL")
+          end
+          @test read(o) == vcat(b"HEAD", blob, b"TAIL")
+          @test filesize(t) == 0
+        end
+      end
+    end
+
+    @testset "_assemble_v4 nk_hint: identical bytes, no deltas reallocation" begin
+      mktempdir() do d
+        # two roots over one shard, overlapping k-mers so the hint (sum over roots) overcounts
+        ka = sort(unique(rand(UInt64(1):UInt64(1) << 30, 3000)))
+        kb = sort(unique(vcat(ka[1:2:end], rand(UInt64(1):UInt64(1) << 30, 1000))))
+        mkroot(dir, ks, slot) = (mkpath(dir); n = length(ks);
+          _write_partial_shard(joinpath(dir, "shard0.bin"),
+            _PartialShard(ks, UInt32.(1:n), UInt64.(1:n + 1), fill(UInt32(slot), n), UInt32.(rand(1:70_000, n)))))
+        mkroot(joinpath(d, "r1"), ka, 1); mkroot(joinpath(d, "r2"), kb, 2)
+        leaves = [[joinpath(d, "r1", "shard0.bin"), joinpath(d, "r2", "shard0.bin")]]
+        ip = _default_idx_prefix_size(6, AAAlphabet())
+        outs = map((0, length(ka) + length(kb), 10 * (length(ka) + length(kb)))) do h
+          o = joinpath(d, "out_$h.kct")
+          _assemble_v4(leaves, 6, AAAlphabet, ip, 2, o; nk_hint = h)
+          read(o)
+        end
+        @test outs[1] == outs[2] == outs[3]
+        @test length(load_kct(joinpath(d, "out_0.kct")).kmer.seqs) == length(union(ka, kb))
+      end
+      # the hinted buffer must never move while filling up to the hint
+      b = _DeltaBuilder(64); sizehint!(b.deltas, 100_000); p0 = pointer(b.deltas)
+      foreach(i -> push!(b, UInt64(3i)), 1:100_000)
+      @test pointer(b.deltas) == p0
+    end
+
+    @testset "end-to-end build unchanged, big counts survive" begin
+      S = Dict("s1" => Dict(_aa_code("MAAAAA") => UInt32(3), _aa_code("MAAAAC") => UInt32(70_000)),
+               "s2" => Dict(_aa_code("MAAAAC") => UInt32(65_535), _aa_code("WAAAAA") => UInt32(1)))
+      kct = mktempdir() do tmp; mktempdir() do out
+        p = build_kct_streaming(["s1", "s2"]; K = 18, translate = true, wave_size = 1, shard_bits = 2,
+                                tmp_dir = tmp, out_dir = out, counter = (x -> deepcopy(S[x])))
+        load_kct(p)
+      end; end
+      @test peptide_counts(kct, "MAAAAC") == [70_000, 65_535]
+      @test peptide_counts(kct, "MAAAAA") == [3, 0]
+      @test peptide_counts(kct, "WAAAAA") == [0, 1]
     end
   end
 

@@ -135,10 +135,66 @@ end
     return String(buf)
 end
 
+## Cut-and-pad translated windows (pad=true) ##
+
+#= Why: with a K-residue table, a peptide shorter than K is only counted from read windows that
+continue K - L residues past it. Windows running into a stop codon, an N or the read's end were
+dropped, so a peptide followed by a stop (C-terminal) was invisible and one near a read end was
+undercounted (max(prefix, suffix) still loses 7-23% at K = 12 on 76 bp reads). pad=true keeps
+those windows instead: cut at the stop / N / read end, write the stop marker (AA_Term) if it was a
+stop, fill the rest with AA_Gap. Both are 5-bit codes translation never emits, so they can't
+collide with a real residue. Every in-frame start then yields exactly one key, and a prefix range
+query counts read occurrences of any peptide of length <= K exactly. Cut windows with fewer than
+`min_res` real residues are dropped, nothing that short is an MHC-I ligand (8 is the floor).
+Ns only cut the windows that reach them, the read itself is kept, so nothing beyond the windows
+overlapping an N is lost (the Jellyfish convention, which the old whole-read drop wasn't). =#
+const _PAD_AA5 = UInt8(BioSequences.encode(AAAlphabet(), AA_Gap))  # 27
+const _STOP_AA5 = UInt8(BioSequences.encode(AAAlphabet(), AA_Term))  # 26
+const _CODON_N = 0xfe  # codon touching a non-ACGT base
+
+# Codon code starting at every position of `l` into `buf` (5-bit AA, 0xff stop, 0xfe N).
+@inline function _codon_track!(buf::Vector{UInt8}, l::AbstractString)
+    n = ncodeunits(l)
+    length(buf) < n && resize!(buf, n)
+    @inbounds for p in 1:(n - 2)
+        a = _NT2BIT[codeunit(l, p) + 1]; b = _NT2BIT[codeunit(l, p + 1) + 1]; c = _NT2BIT[codeunit(l, p + 2) + 1]
+        buf[p] = (a == 0xff || b == 0xff || c == 0xff) ? _CODON_N : _CODON2AA5[(Int(a) << 4 | Int(b) << 2 | Int(c)) + 1]
+    end
+    return n
+end
+
+# Count every cut-and-pad window of one strand into `hash`. kk residues per key.
+function _count_padded!(hash::Dict{UInt64, UInt32}, l::AbstractString, kk::Int, min_res::Int, buf::Vector{UInt8})
+    n = _codon_track!(buf, l)
+    @inbounds for s in 1:(n - 2)
+        key = UInt64(0)
+        m = 0
+        stop = false
+        p = s
+        while m < kk && p + 2 <= n
+            c = buf[p]
+            c == 0xff && (stop = true; break)
+            c == _CODON_N && break
+            key = (key << 5) | c
+            m += 1
+            p += 3
+        end
+        if m < kk
+            m < min_res && continue
+            key = (key << 5) | (stop ? _STOP_AA5 : _PAD_AA5)
+            for _ in (m + 2):kk
+                key = (key << 5) | _PAD_AA5
+            end
+        end
+        hash[key] = get(hash, key, UInt32(0)) + UInt32(1)
+    end
+end
+
 # Streams a bio file in fixed-size chunks, one spawned counting task per chunk, gated by a
 # semaphore so the reader can't outrun the counters (see ARCHITECTURE.md). Blocks until done.
 function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}},
                       chunking::Int=1_000_000; translate::Bool=false, double_strand::Bool=false,
+                      pad::Bool=false, min_res::Int=8,
                       max_inflight::Int=max(2, Threads.nthreads()), verbose::Bool=false)
     counting_tasks = Task[]
     gate = Base.Semaphore(max_inflight)
@@ -153,7 +209,8 @@ function chunk_stream(file::String, K::Int, merge_queue::Channel{Dict{UInt64, UI
         Threads.atomic_add!(inflight, 1)
         push!(counting_tasks, Threads.@spawn begin
             try
-                count_kmers(chunk, K, merge_queue; translate = translate, double_strand = double_strand)
+                count_kmers(chunk, K, merge_queue; translate = translate, double_strand = double_strand,
+                            pad = pad, min_res = min_res)
             finally
                 Threads.atomic_sub!(inflight, 1)
                 Base.release(gate)
@@ -196,8 +253,29 @@ end
 # something `_has_nonacgt` already rejected). Errors are logged and the partial table is
 # still enqueued.
 function count_kmers(chunk::Vector{String}, K::Int, merge_queue::Channel{Dict{UInt64, UInt32}};
-                     translate::Bool=false, double_strand::Bool=false, verbose::Bool=false)
+                     translate::Bool=false, double_strand::Bool=false, pad::Bool=false,
+                     min_res::Int=8, verbose::Bool=false)
     hash = Dict{UInt64, UInt32}()
+    if pad
+        # cut-and-pad mode: never builds a nucleotide window code, so K is only bounded by the
+        # 64-bit AA key (5 bits x K/3 residues, K <= 36)
+        translate || error("pad=true needs translate=true")
+        K % 3 == 0 || error("pad=true needs K divisible by 3, got $K")
+        kk = K ÷ 3
+        5kk <= 64 || error("K=$K too large for a 64-bit AA code")
+        1 <= min_res <= kk || error("min_res=$min_res outside 1..$kk")
+        buf = UInt8[]
+        try
+            @inbounds for l in chunk
+                _count_padded!(hash, l, kk, min_res, buf)
+                double_strand && _count_padded!(hash, _revcomp(l), kk, min_res, buf)
+            end
+        catch e
+            @error "counting thread task crashed during hash building" exception=(e, catch_backtrace())
+        end
+        put!(merge_queue, hash)
+        return
+    end
     twoK = 2K
     twoK <= 64 || error("K=$K too large for a 64-bit nucleotide code")
     translate && (5 * (K ÷ 3) <= 64 || error("K=$K too large for a 64-bit AA code"))
@@ -239,8 +317,8 @@ end
 
 """
     jello_superthreaded_hash(fastq, K, chunking=1_000_000, queue_size=128;
-                             translate=false, double_strand=false, max_inflight=nthreads(),
-                             verbose=false)
+                             translate=false, double_strand=false, pad=false, min_res=8,
+                             max_inflight=nthreads(), verbose=false)
         -> Dict{UInt64, UInt32}
 
 Count k-mers in `fastq` and return a map from a k-mer's raw bit-encoding to its count.
@@ -257,9 +335,16 @@ alongside it once counted). Reads are counted per chunk on separate threads whil
 task folds the finished per-chunk tables together in a binary tree. `chunking` sets reads
 per chunk, `queue_size` the merge-queue depth, `max_inflight` the cap on concurrent counting
 tasks so the reader cannot outrun the counters.
+
+`pad=true` (needs `translate=true`) switches to cut-and-pad windows: a window that runs into a
+stop codon, an N or the read's end is kept, cut there and filled with `AA_Term` (if a stop) then
+`AA_Gap`, as long as it has at least `min_res` real residues. Reads with Ns are no longer skipped
+whole. Every in-frame start yields one key, so prefix queries count read occurrences of a
+peptide exactly (see `_count_padded!`). K can go up to 36 nt (12 residues) in this mode.
 """
 function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000, queue_size::Int=128;
                                   translate::Bool=false, double_strand::Bool=false,
+                                  pad::Bool=false, min_res::Int=8,
                                   max_inflight::Int=max(2, Threads.nthreads()),
                                   verbose::Bool=false)
     Hash_Type = Dict{UInt64, UInt32}
@@ -294,7 +379,7 @@ function jello_superthreaded_hash(fastq::String, K::Int, chunking::Int=1_000_000
     end
 
     chunk_stream(fastq, K, merge_queue, chunking; translate = translate, double_strand = double_strand,
-                 max_inflight = max_inflight, verbose = verbose)
+                 pad = pad, min_res = min_res, max_inflight = max_inflight, verbose = verbose)
 
     progress = ProgressUnknown(desc = "Counting tasks done. Waiting on merger tasks to complete...")
     while inflight[] != 0 || merge_queue.n_avail_items != 0 || length(paired) != 1

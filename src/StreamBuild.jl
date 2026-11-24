@@ -34,29 +34,83 @@ end
 
 ## Partial-shard disk IO ##
 
+#= On-disk partial shards hold every (sample, count) pair of the cohort unpacked, which is
+what sets the streaming build's peak disk. At K=12 aa on GTEx that pool is ~1.93T pairs, so
+two UInt32 per pair is ~15.4 TB on its own. The narrow format stores both as UInt16 and
+halves it. Samples fit by construction (2,486 GTEx samples). Counts >= 0xffff go to an
+exception list (UInt64 index + UInt32 value, 12 bytes each). Measured on the K=10 GTEx table
+that is ~9e-6 of pairs (~9.1M, about 110 MB at GTEx scale) and 1.9e-7 on the K=12 small
+cohort, so the escape is noise against 7.7 TB saved.
+
+Narrow files start with the magic Int64 -2. Legacy files start with n_kmers >= 0, so the
+reader takes either and a work dir from before this change still resumes. Only the disk
+format changes, the in-memory `_PartialShard` stays UInt32. A shard whose max sample slot
+exceeds 0xffff (a >65,535-sample cohort) falls back to the legacy layout. =#
+const _PARTIAL_NARROW_MAGIC = Int64(-2)
+const _PARTIAL_C16_ESC = UInt16(0xffff)
+
 function _write_partial_shard(path::String, ps::_PartialShard)
+    narrow = isempty(ps.pool_s) || maximum(ps.pool_s) <= typemax(UInt16)
     open(path, "w") do io
+        narrow && write(io, _PARTIAL_NARROW_MAGIC)
         write(io, Int64(length(ps.kmers)))
         write(io, ps.kmers)
         write(io, ps.row_id)
         write(io, Int64(length(ps.offsets) - 1))  # n_rows
         write(io, ps.offsets)
         write(io, Int64(length(ps.pool_s)))  # n_pairs
-        write(io, ps.pool_s)
-        write(io, ps.pool_c)
+        if !narrow
+            write(io, ps.pool_s)
+            write(io, ps.pool_c)
+            return
+        end
+        np = length(ps.pool_s)
+        buf = Vector{UInt16}(undef, np)
+        @inbounds for i in 1:np; buf[i] = ps.pool_s[i] % UInt16; end
+        write(io, buf)
+        exc_i = UInt64[]; exc_v = UInt32[]
+        @inbounds for i in 1:np
+            c = ps.pool_c[i]
+            if c >= _PARTIAL_C16_ESC
+                buf[i] = _PARTIAL_C16_ESC
+                push!(exc_i, UInt64(i)); push!(exc_v, c)
+            else
+                buf[i] = c % UInt16
+            end
+        end
+        write(io, buf)
+        write(io, Int64(length(exc_i)))
+        write(io, exc_i)
+        write(io, exc_v)
     end
 end
 
 function _read_partial_shard(path::String)::_PartialShard
     open(path, "r") do io
-        nk = read(io, Int64)
+        first = read(io, Int64)
+        narrow = first == _PARTIAL_NARROW_MAGIC
+        nk = narrow ? read(io, Int64) : first
         kmers = Vector{UInt64}(undef, nk); read!(io, kmers)
         row_id = Vector{UInt32}(undef, nk); read!(io, row_id)
         nr = read(io, Int64)
         offsets = Vector{UInt64}(undef, nr + 1); read!(io, offsets)
         np = read(io, Int64)
-        pool_s = Vector{UInt32}(undef, np); read!(io, pool_s)
-        pool_c = Vector{UInt32}(undef, np); read!(io, pool_c)
+        if !narrow
+            pool_s = Vector{UInt32}(undef, np); read!(io, pool_s)
+            pool_c = Vector{UInt32}(undef, np); read!(io, pool_c)
+            return _PartialShard(kmers, row_id, offsets, pool_s, pool_c)
+        end
+        buf = Vector{UInt16}(undef, np)
+        read!(io, buf); pool_s = UInt32.(buf)
+        read!(io, buf); pool_c = UInt32.(buf)
+        buf = nothing
+        ne = read(io, Int64)
+        exc_i = Vector{UInt64}(undef, ne); read!(io, exc_i)
+        exc_v = Vector{UInt32}(undef, ne); read!(io, exc_v)
+        @inbounds for j in 1:ne
+            pool_c[exc_i[j]] == _PARTIAL_C16_ESC || error("$path: corrupt count exception at pair $(exc_i[j])")
+            pool_c[exc_i[j]] = exc_v[j]
+        end
         return _PartialShard(kmers, row_id, offsets, pool_s, pool_c)
     end
 end
@@ -142,7 +196,8 @@ function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, re
         for io in ios; close(io); end
     end
 
-    _log("  folding $P shard record files into partials")
+    rec_bytes = _dir_bytes(rec_dir)
+    _log("  folding $P shard record files into partials ($(Base.format_bytes(rec_bytes)) of records)")
     for p in 0:(P - 1)
         rp = joinpath(rec_dir, "rec$(p).bin")
         _build_wave_shard(rp, joinpath(out_dir, "shard$(p).bin"))
@@ -151,6 +206,7 @@ function _run_wave(paths::Vector{String}, first_global::Int, out_dir::String, re
     open(joinpath(out_dir, "manifest"), "w") do io
         write(io, Int64(first_global)); write(io, Int64(length(paths)))
     end
+    return rec_bytes
 end
 
 # Sort one shard's records by k-mer, collapse equal-k-mer runs into sparse rows, dedup
@@ -434,6 +490,41 @@ function _merge_shard_rows(paths::Vector{String})
     return out_k, off, flat_s, flat_c
 end
 
+#= Incremental DeltaArray encoder for assembly. The old path appended every k-mer into one
+Vector{UInt64} and only then delta-encoded it: 8 bytes per k-mer, up to ~16 while append!
+grows the vector, plus the 4-byte deltas built next to it. That is why the K = 10 GTEx assembly
+(62.5 B k-mers) needed an 1,800 GB job, and a K = 12 cut-and-pad table with more k-mers would
+not fit on oni at all. Encoding as k-mers stream out of the leaves keeps only the deltas
+(4 bytes each, ~8 while growing) plus the checkpoints. Output is identical to NArrays'
+_delta_encode on the same sorted sequence (checked in the test suite). =#
+mutable struct _DeltaBuilder
+    checkpoints::Vector{UInt64}
+    deltas::Vector{UInt32}
+    regular_cp_idx::Vector{UInt64}
+    inter::Int
+    prev::UInt64
+    n::Int
+end
+_DeltaBuilder(inter::Int) = _DeltaBuilder(UInt64[], UInt32[], UInt64[], inter, UInt64(0), 0)
+
+function Base.push!(b::_DeltaBuilder, v::UInt64)
+    b.n += 1
+    b.n > 1 && v <= b.prev && error("k-mers out of order at $(b.n): $v after $(b.prev)")
+    is_regular = (b.n - 1) % b.inter == 0
+    if is_regular || (b.n > 1 && v - b.prev > typemax(UInt32))
+        is_regular && push!(b.regular_cp_idx, length(b.checkpoints) + 1)
+        push!(b.checkpoints, v)
+        push!(b.deltas, UInt32(0))
+    else
+        push!(b.deltas, UInt32(v - b.prev))
+    end
+    b.prev = v
+    return b
+end
+
+Base.length(b::_DeltaBuilder) = b.n
+_finish(b::_DeltaBuilder) = DeltaArray(b.checkpoints, b.deltas, b.regular_cp_idx, b.inter)
+
 # Transcode the merged root partials into one V4.0 table, packing each k-mer's row inline.
 # The blob streams to a temp file next to `out_path` rather than staying resident (it can be
 # 1-2 TB at full cohort, see ARCHITECTURE.md); RAM holds the k-mer array, block index and one
@@ -443,13 +534,20 @@ end
 # either an original `shard{p}.bin` left alone, or a reshard child under `work/reshard`
 # for a shard that was oversized and split further -- see ARCHITECTURE.md.
 function _assemble_v4(leaves::Vector{Vector{String}}, kk::Int, Ab::Type, idx_prefix::Int,
-                     total_samples::Int, out_path::String)
+                     total_samples::Int, out_path::String; nk_hint::Int = 0)
     B = _V4_BLOCK_KMERS
     L = length(leaves)
     blobtmp = string(out_path, ".blob.tmp")
     rm(blobtmp; force = true)
 
-    all_kmers = UInt64[]
+    kbuild = _DeltaBuilder(DEFAULT_CHECKPOINT_INTERVAL)
+    #= Growing `deltas` by push! reallocates and copies, so near the end the old and new
+    buffers coexist: at K=12 aa GTEx that's ~512 GB live plus a ~768 GB copy target, right at
+    the job's memory limit. `nk_hint` is the k-mer count summed over roots, an overcount
+    (a k-mer in several roots counts several times), so this reserves more than it fills.
+    Linux only commits pages that get written, so the slack costs address space, not RSS
+    (measured, see PAPER_TODO D6). =#
+    nk_hint > 0 && sizehint!(kbuild.deltas, nk_hint)
     block_ptr = UInt64[]
     npairs = 0
     blob_len = 0
@@ -477,7 +575,7 @@ function _assemble_v4(leaves::Vector{Vector{String}}, kk::Int, Ab::Type, idx_pre
             tasks = [Threads.@spawn _merge_shard_rows(leafpaths) for leafpaths in chunk]
             for t in tasks
                 ks, roff, fs, fc = fetch(t)
-                append!(all_kmers, ks)
+                foreach(k -> push!(kbuild, k), ks)
                 @inbounds for i in eachindex(ks)
                     a = roff[i]; b = roff[i + 1] - 1
                     npairs += (b - a + 1)
@@ -488,16 +586,16 @@ function _assemble_v4(leaves::Vector{Vector{String}}, kk::Int, Ab::Type, idx_pre
                 end
             end
             nleaves_done += length(chunk)
-            _log("  assemble: $nleaves_done/$L leaves packed, $(length(all_kmers)) k-mers, " *
-                 "$(Base.format_bytes(blob_len)) blob")
+            _log("  assemble: $nleaves_done/$L leaves packed, $(length(kbuild)) k-mers, " *
+                 "$(Base.format_bytes(blob_len)) blob, RSS $(round(_rss_gb(); digits = 1)) GB")
         end
         flush_block!()
         isempty(blobbuf) || write(bio, blobbuf)
     end
 
-    n_kmers = length(all_kmers)
-    seqs = DeltaArray{UInt64, UInt32}(all_kmers, DEFAULT_CHECKPOINT_INTERVAL)  # already globally sorted
-    all_kmers = UInt64[]  # ~8*n_kmers freed before the write
+    n_kmers = length(kbuild)
+    seqs = _finish(kbuild)  # encoded as the leaves streamed out, globally sorted
+    kbuild = nothing
     kl = KmerLayer{kk, Ab, UInt64, UInt32}(seqs, _empty_kmer_idx(kk, Ab(), UInt64; prefix_size = idx_prefix))
     cl = CountsLayer(B, block_ptr, UInt8[], n_kmers, total_samples)  # blob stays on disk
     kct = KCT(kl, cl)
@@ -509,17 +607,44 @@ function _assemble_v4(leaves::Vector{Vector{String}}, kk::Int, Ab::Type, idx_pre
         write(io, 4.0)
         _write_header_and_kmers(io, kct)
         _write_counts_header(io, total_samples, n_kmers, B, length(block_ptr), blob_len, block_ptr)
-        open(blobtmp, "r") do bin
-            buf = Vector{UInt8}(undef, 1 << 26)
-            while !eof(bin)
-                n = readbytes!(bin, buf)
-                write(io, view(buf, 1:n))
-            end
-        end
+        _move_blob_tail!(io, blobtmp, blob_len)
         _write_biotype(io, nothing)
     end
     rm(blobtmp; force = true)
     return out_path
+end
+
+#= The blob has to land after the k-mer section and block index, and neither size is known
+until the last leaf is packed, so it goes to `blobtmp` first. A forward copy then holds the
+blob twice (~4 TB extra at K=12 aa GTEx). This copies it back to front instead, writing each
+64 MB chunk at its final offset in `io` (the file is sparse until filled) and truncating
+`blobtmp` behind it, so the extra disk is one chunk. A crash mid-move loses the blob, which
+is fine: assembly isn't resumable anyway and reruns from the leaves, which `work` still
+holds. Leaves `io` positioned right after the blob. =#
+function _move_blob_tail!(io::IO, blobtmp::String, blob_len::Integer; chunk::Int = 1 << 26)
+    pos0 = position(io)
+    open(blobtmp, "r+") do bin
+        filesize(blobtmp) == blob_len || error("$blobtmp is $(filesize(blobtmp)) bytes, expected $blob_len")
+        buf = Vector{UInt8}(undef, chunk)
+        hi = Int(blob_len)
+        nmoved = 0
+        while hi > 0
+            lo = max(0, hi - chunk)
+            n = hi - lo
+            seek(bin, lo)
+            read!(bin, view(buf, 1:n))
+            seek(io, pos0 + lo)
+            write(io, view(buf, 1:n))
+            flush(io)  # must be in the output before the source bytes go away
+            truncate(bin, lo)
+            hi = lo
+            nmoved += 1
+            nmoved % 4096 == 0 && _log("  blob move: $(Base.format_bytes(blob_len - hi)) of " *
+                                       "$(Base.format_bytes(blob_len)) moved, RSS $(round(_rss_gb(); digits = 1)) GB")
+        end
+    end
+    seek(io, pos0 + blob_len)
+    return nothing
 end
 
 ## Seed adapter: an existing .kct -> a level-0 partial ##
@@ -730,6 +855,43 @@ function _patch_sample_counts(kct::KCT{K, Ab, CountsLayer, Nothing, C, D}, sampl
     return out_path
 end
 
+## Free-space guard ##
+
+#= The August GTEx DNA run wedged in an uninterruptible NFS write() when the export filled,
+and a full disk mid-merge can leave a half-written shard behind. So before each step that
+writes a lot, check the out_dir filesystem has room for that step plus `margin`, and if not,
+log and sleep until someone frees space instead of failing. A paused job costs wall time, a
+wedged one costs the run. Needs are estimates: a merge writes about what its inputs hold, and
+assembly writes the blob (~2.1 bytes/pair measured on the K=10 GTEx table, 2.5 used here)
+plus ~4 bytes per k-mer (deltas), with k-mers summed over roots so it overcounts. =#
+_free_bytes(path::String) = Int(Base.Filesystem.diskstat(path).available)
+_dir_bytes(d::String) = isdir(d) ? sum((filesize(joinpath(d, f)) for f in readdir(d)); init = 0) : 0
+
+function _await_disk(path::String, need::Integer, what::String; poll_s::Int = 900)
+    need <= 0 && return nothing
+    waited = false
+    while (f = _free_bytes(path)) < need
+        _log("  DISK: $what needs $(Base.format_bytes(need)) free on $path, only " *
+             "$(Base.format_bytes(f)) available. Waiting $(poll_s ÷ 60) min, free space to continue.")
+        waited = true
+        sleep(poll_s)
+    end
+    waited && _log("  DISK: $(Base.format_bytes(_free_bytes(path))) free now, continuing $what")
+    return nothing
+end
+
+# (n_kmers, n_pairs) from a partial shard's headers, without reading its arrays.
+function _partial_sizes(path::String)
+    open(path, "r") do io
+        nk = read(io, Int64)
+        narrow = nk == _PARTIAL_NARROW_MAGIC
+        narrow && (nk = read(io, Int64))
+        skip(io, nk * (sizeof(UInt64) + sizeof(UInt32)))
+        nr = read(io, Int64); skip(io, (nr + 1) * sizeof(UInt64))
+        return nk, read(io, Int64)
+    end
+end
+
 ## Pool-size tripwire ##
 
 function _partial_pool_bytes(dir::String, P::Int)
@@ -737,6 +899,7 @@ function _partial_pool_bytes(dir::String, P::Int)
     for p in 0:(P - 1)
         open(joinpath(dir, "shard$(p).bin"), "r") do io
             nk = read(io, Int64)
+            nk == _PARTIAL_NARROW_MAGIC && (nk = read(io, Int64))
             skip(io, nk * sizeof(UInt64) + nk * sizeof(UInt32))  # kmers + row_id
             nr = read(io, Int64); skip(io, (nr + 1) * sizeof(UInt64))  # offsets
             np = read(io, Int64)
@@ -771,6 +934,9 @@ waves instead of growing with the cohort.
   `jello_superthreaded_hash`'s docstring for why this has to happen during counting rather
   than as a query-time trick once `translate=true` has folded reads down to AA k-mers. The
   default `counter` picks up this flag; a custom `counter` must honour it itself
+- `pad`, `min_res`: cut-and-pad translated windows (needs `translate=true`), see
+  `jello_superthreaded_hash`. Makes prefix queries exact read-occurrence counts and allows
+  K up to 36 nt. The default `counter` picks these up
 - `wave_size`: samples counted and folded per wave
 - `shard_bits`: gives `2^shard_bits` prefix shards. `merge_fanin` partials are combined per
   hierarchical merge step
@@ -790,18 +956,22 @@ waves instead of growing with the cohort.
 - `resume`: skips any wave or partial that already has a `DONE` marker
 - `count_attempts`: retries per sample when `counter` throws (transient samtools/FIFO/NFS
   failures), with a linear backoff, before aborting and naming the sample
+- `min_free_gb`: headroom kept on `out_dir`'s filesystem. Each wave, merge and the assembly
+  wait (logging every 15 min) until free space covers their estimated output plus this
 - `max_pool_gb`: accepted for CLI compatibility, no longer used (the build logs a size
   projection after the first super-partial but never aborts)
 """
 function build_kct_streaming(sample_paths::Vector{String};
         K::Int = 30, chunks::Int = 500_000, translate::Bool = false, double_strand::Bool = false,
+        pad::Bool = false, min_res::Int = 8,
         wave_size::Int = 100, shard_bits::Int = 8,
         merge_fanin::Int = 5, max_pool_gb::Real = 400, idx_prefix::Int = -1,
         reshard_leaf_bytes::Int = 4_000_000_000, reshard_extra_bits::Int = 4,
-        count_attempts::Int = 4,
+        count_attempts::Int = 4, min_free_gb::Real = 50,
         tmp_dir::String = _STREAM_TMP_DEFAULT, out_dir::String,
         out_path::String = joinpath(out_dir, "neokct_v4.kct"),
-        counter = (p -> jello_superthreaded_hash(p, K, chunks; translate = translate, double_strand = double_strand)),
+        counter = (p -> jello_superthreaded_hash(p, K, chunks; translate = translate, double_strand = double_strand,
+                                                 pad = pad, min_res = min_res)),
         seeds::Vector{Tuple{String, Int}} = Tuple{String, Int}[],
         resume::Bool = true)
 
@@ -818,6 +988,7 @@ function build_kct_streaming(sample_paths::Vector{String};
     merge_fanin >= 2 || error("merge_fanin must be >= 2")
 
     work = joinpath(out_dir, "streaming_work"); mkpath(work)
+    margin = round(Int, min_free_gb * 1e9)
     rec_root = joinpath(tmp_dir, "neokct_stream_rec_$(getpid())"); mkpath(rec_root)
 
     # DONE markers live in a flat dir, not inside each partial's folder: merges now run
@@ -871,7 +1042,9 @@ function build_kct_streaming(sample_paths::Vector{String};
         tripped = Ref(false)
         function _run_merge_node!(out::String, ins::Vector{String})
             od = joinpath(work, out)
-            rm(od; recursive = true, force = true); mkpath(od)
+            rm(od; recursive = true, force = true)
+            _await_disk(work, sum(i -> _dir_bytes(joinpath(work, i)), ins) + margin, "merge $out")
+            mkpath(od)
             _log("  merge $out <- [$(join(ins, ", "))]  ($(covered[out]) samples), $(Threads.nthreads()) threads")
             in_dirs = String[joinpath(work, i) for i in ins]
             ndone = Threads.Atomic{Int}(0)
@@ -881,6 +1054,7 @@ function build_kct_streaming(sample_paths::Vector{String};
                 (n % 32 == 0 || n == P) && _log("    $out: $n/$P shards")
             end
             _mark(out)
+            _log("  $out: $(Base.format_bytes(_dir_bytes(od))) on disk, $(Base.format_bytes(_free_bytes(work))) free on out_dir")
             for i in ins
                 rm(joinpath(work, i); recursive = true, force = true)
             end
@@ -918,9 +1092,17 @@ function build_kct_streaming(sample_paths::Vector{String};
             name = "wave_$(w)"; d = joinpath(work, name)
             if !(resume && _done(name))
                 rm(d; recursive = true, force = true); mkpath(d)
+                _await_disk(work, margin, "wave $w")
+                # tmp_dir holds the whole wave's records before folding (~620 GB for 50
+                # GTEx samples at K=12 aa on oni's ~1.2 TB local SSD), so size this check
+                # from the last wave's records, kept in a sidecar so a resume knows it too
+                recf = joinpath(mark_dir, "wave_rec_bytes.n")
+                last_rec = isfile(recf) ? parse(Int, read(recf, String)) : 0
+                _await_disk(rec_root, round(Int, 1.1 * last_rec) + 20_000_000_000, "wave $w records (tmp_dir)")
                 _log("wave $w/$n_waves: samples $(lo)..$(hi) (global $(first_global)..$(n_prefix + hi))")
-                _run_wave(sample_paths[lo:hi], first_global, d, joinpath(rec_root, name),
+                rec_bytes = _run_wave(sample_paths[lo:hi], first_global, d, joinpath(rec_root, name),
                           keep_shift, P, counter; count_attempts = count_attempts)
+                write(joinpath(mark_dir, "wave_rec_bytes.n"), string(rec_bytes))
                 rm(joinpath(rec_root, name); recursive = true, force = true)
                 _mark(name)
             end
@@ -949,8 +1131,13 @@ function build_kct_streaming(sample_paths::Vector{String};
                                  reshard_extra_bits, _done, _mark)
 
         # assemble
+        nk_sum = 0; np_sum = 0
+        for lp in leaves, f in lp
+            nk, np = _partial_sizes(f); nk_sum += nk; np_sum += np
+        end
+        _await_disk(dirname(out_path), round(Int, 2.5 * np_sum + 4.1 * nk_sum) + margin, "assembly")
         _log("assembling -> $out_path  ($final_total samples, $(length(leaves)) leaves)")
-        _assemble_v4(leaves, kk, Ab, idx_prefix, final_total, out_path)
+        _assemble_v4(leaves, kk, Ab, idx_prefix, final_total, out_path; nk_hint = nk_sum)
         rm(work; recursive = true, force = true)
         return out_path
     finally

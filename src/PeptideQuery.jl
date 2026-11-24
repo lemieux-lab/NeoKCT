@@ -94,8 +94,61 @@ function _sum_rows(cl::CountsLayer, r::UnitRange{Int})
     return v
 end
 
+#= Suffix anchoring, the fix for the C-terminal blind spot (PAPER_TODO.md A5 side note).
+The prefix query needs the read to continue 3(K - L) stop-free nucleotides past the peptide,
+so a peptide whose next codon is a stop is invisible: RLATAPSEK has a stop after it at 240 of
+its 246 genomic locations and the prefix query saw 6 reads where BamQuery saw 518 over the C5
+small cohort. The K-mers that end with the peptide aren't a contiguous range (the free
+residues are in the high bits), but there are only 20^(K-L) of them, each an exact lookup:
+20 for a 9-mer, 400 for an 8-mer. No new index, no table rebuild. =#
+const _AA20 = "ACDEFGHIKLMNPQRSTVWY"  # what translate() can emit, stops are dropped at build time
+const _MAX_SUFFIX_PAD = 3  # 20^3 = 8,000 lookups, beyond that suffix anchoring is skipped
+
+# Per-sample sum of the rows of every K-mer X * pep, X over all 20^(K - L) residue strings.
+function _suffix_counts(kct::KCT{K, AAAlphabet, CountsLayer}, pep::AbstractString) where {K}
+    L = length(pep)
+    pad = K - L
+    pep_code = _aa_code(pep)
+    aa_codes = [UInt64(BioSequences.encode(AAAlphabet(), AminoAcid(c))) for c in _AA20]
+    v = zeros(UInt32, Int(kct.counts.n_samples.x))
+    for m in 0:(20^pad - 1)
+        x = UInt64(0)
+        r = m
+        for _ in 1:pad
+            x = (x << 5) | aa_codes[r % 20 + 1]
+            r ÷= 20
+        end
+        i = findfirst(kct.kmer, (x << (5 * L)) | pep_code)
+        i == 0 || (v .+= kct.counts[i])
+    end
+    return v
+end
+
+# Was this table built with cut-and-pad windows (pad=true)? Pad and stop codes never come out
+# of plain translation, and in a padded table they sit in a large share of k-mers (every read
+# end, every stop), so ~4k evenly spaced k-mers settle it without a format flag. Cached per
+# table object, the answer can't change for a loaded table.
+const _PADDED_CACHE = IdDict{Any, Bool}()
+const _PADDED_LOCK = ReentrantLock()
+function _is_padded(kct::KCT{K, AAAlphabet}) where {K}
+    lock(_PADDED_LOCK) do
+        get!(_PADDED_CACHE, kct) do
+            n = length(kct.kmer.seqs)
+            n == 0 && return false
+            for i in unique(round.(Int, range(1, n; length=min(n, 4096))))
+                v = kct.kmer.seqs[i]
+                for j in 0:(K - 1)
+                    c = (v >> (5j)) & 0x1f
+                    (c == _PAD_AA5 || c == _STOP_AA5) && return true
+                end
+            end
+            return false
+        end
+    end
+end
+
 """
-    peptide_counts(kct, pep; il_ambiguous=false) -> Vector{UInt32}
+    peptide_counts(kct, pep; il_ambiguous=false, anchor=:auto) -> Vector{UInt32}
 
 Per-sample abundance of `pep` against a `CountsLayer` table. `length(pep) <= K` sums the
 counts over the peptide's whole prefix range: the number of read windows that start with a
@@ -107,16 +160,36 @@ carrying the whole peptide. `il_ambiguous=true` sums over every I/L variant of `
 peptide whose I/L assignment came from a database lookup rather than the spectrum (leucine
 and isoleucine are isobaric, indistinguishable by mass alone).
 
-Two known blind spots, not fixed here (PAPER_TODO.md task A5): a peptide sitting right at
-the C-terminus of its ORF has no stop-free extension and returns 0 for `length(pep) < K`
-even if genuinely present; matching is exact, so a read with a sequencing error inside the
-window is not counted, same as BamQuery.
+On a cut-and-pad table (built with `pad=true`) the prefix range alone is an exact count of
+read occurrences for any `length(pep) <= K`: every occurrence contributes exactly one window
+starting at it, cut and padded if it hit a stop, an N or the read's end. `anchor=:auto`
+(default) uses `:prefix` there and `:both` on any other table.
+
+`anchor` controls how a peptide shorter than K is anchored inside its K-mers. `:prefix`
+is the original query above. `:both` also counts the read windows that *end*
+with the peptide, every `X * pep` with `X` one of the `20^(K - length(pep))` residue strings
+(one exact lookup each), and returns the per-sample maximum of the two. That recovers a
+peptide sitting at the C-terminus of its ORF, whose prefix range is empty because the
+codon right after it is a stop, and reads where the peptide sits at the read's own 3' edge.
+The max is still a lower bound on the reads carrying the peptide and never counts one twice.
+Suffix anchoring is skipped when `K - length(pep) > $(_MAX_SUFFIX_PAD)` (more than
+$(20^_MAX_SUFFIX_PAD) lookups), which never happens for an 8-11-mer against K = 10.
+
+Remaining blind spots: a peptide that is a whole ORF by itself (stop on both sides, no
+room for either extension) still returns 0 for `length(pep) < K`; matching is exact, so a
+read with a sequencing error inside the window is not counted, same as BamQuery.
 """
 function peptide_counts(kct::KCT{K, AAAlphabet, CountsLayer}, pep::AbstractString;
-                        il_ambiguous::Bool=false) where {K}
-    il_ambiguous && return sum(peptide_counts(kct, v) for v in _il_variants(pep))
+                        il_ambiguous::Bool=false, anchor::Symbol=:auto) where {K}
+    anchor in (:auto, :prefix, :both) || throw(ArgumentError("anchor must be :auto, :prefix or :both, got :$anchor"))
+    anchor == :auto && (anchor = _is_padded(kct) ? :prefix : :both)
+    il_ambiguous && return sum(peptide_counts(kct, v; anchor=anchor) for v in _il_variants(pep))
     L = length(pep)
-    L <= K && return _sum_rows(kct.counts, searchsorted(kct.kmer, pep))
+    if L <= K
+        v = _sum_rows(kct.counts, searchsorted(kct.kmer, pep))
+        (anchor == :prefix || L == K || K - L > _MAX_SUFFIX_PAD) && return v
+        return max.(v, _suffix_counts(kct, pep))
+    end
     v = fill(typemax(UInt32), Int(kct.counts.n_samples.x))
     for s in 1:(L - K + 1)
         i = findfirst(kct.kmer, _aa_code(pep[s:s + K - 1]))
@@ -142,7 +215,7 @@ function _il_variants(pep::AbstractString)
 end
 
 """
-    peptide_matrix(kct, peps; il_ambiguous=false) -> Matrix{UInt32}
+    peptide_matrix(kct, peps; il_ambiguous=false, anchor=:auto) -> Matrix{UInt32}
 
 `peptide_counts` for every peptide in `peps`, one row per peptide, one column per sample.
 Peptides are independent, so the loop runs across threads. Logs progress through `_Prog`
@@ -150,11 +223,11 @@ Peptides are independent, so the loop runs across threads. Logs progress through
 run PAPER_TODO.md's conventions want instrumented.
 """
 function peptide_matrix(kct::KCT{K, AAAlphabet, CountsLayer}, peps::Vector{String};
-                        il_ambiguous::Bool=false) where {K}
+                        il_ambiguous::Bool=false, anchor::Symbol=:auto) where {K}
     M = zeros(UInt32, length(peps), Int(kct.counts.n_samples.x))
     p = _Prog(length(peps), "peptide_matrix")
     Threads.@threads for j in eachindex(peps)
-        M[j, :] .= peptide_counts(kct, peps[j]; il_ambiguous=il_ambiguous)
+        M[j, :] .= peptide_counts(kct, peps[j]; il_ambiguous=il_ambiguous, anchor=anchor)
         tick!(p)
     end
     return M

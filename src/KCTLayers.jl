@@ -708,9 +708,12 @@ end
 
 include("JelloFish.jl")
 
-# AA default: the original constant, unconditionally. Lives here, not next to the DNA
-# method above, because AAAlphabet is only defined once JelloFish.jl has been included.
-_default_idx_prefix_size(K::Integer, ::AAAlphabet) = DEFAULT_IDX_PREFIX_SIZE
+# AA default: the index buckets on the first K - prefix_size residues. The original constant 5
+# gives the first 5 residues at K = 10 (2^25 buckets). Kept for K <= 10 so every existing table
+# reloads identically, but at K = 12 a fixed 5 would bucket on 7 residues, 2^35 buckets, an
+# impossible allocation. Past 10 keep bucketing on the first 5 residues instead. Lives here, not
+# next to the DNA method above, because AAAlphabet is only defined once JelloFish.jl is included.
+_default_idx_prefix_size(K::Integer, ::AAAlphabet) = K <= 10 ? DEFAULT_IDX_PREFIX_SIZE : K - 5
 
 include("JellyfishDump.jl")
 include("GenomicIndexBuilder.jl")
